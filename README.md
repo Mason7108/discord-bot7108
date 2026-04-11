@@ -71,7 +71,7 @@ Optional:
 - Leveling: `/level /rank /leaderboard /setlevelrole`
 - Music: `/play /pause /skip /queue /stop /volume /music247`
 - Giveaways: `/giveaway start|end|reroll|delete`
-- Utility/Fun: `/ping /serverinfo /userinfo /avatar /poll /remind /math /splitvc /meme /eightball /joke /roll /trivia /askai`
+- Utility/Fun: `/ping /serverinfo /userinfo /avatar /poll /remind /math /splitvc /movevc /meme /eightball /joke /roll /trivia /askai`
 
 ## Notes
 
