@@ -12,7 +12,11 @@ const envSchema = z.object({
   API_PORT: z.coerce.number().default(3000),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
   DEFAULT_CURRENCY: z.string().default("coins"),
-  AI_API_KEY: z.string().optional()
+  AI_API_KEY: z.string().optional(),
+  VERIFIED_ROLE_ID: z.string().optional(),
+  VERIFIED_ROLE_NAME: z.string().default("Verified"),
+  MEMBER_ROLE_ID: z.string().optional(),
+  MEMBER_ROLE_NAME: z.string().default("Member")
 });
 
 export type Env = z.infer<typeof envSchema>;
