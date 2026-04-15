@@ -66,7 +66,7 @@ async function bootstrap() {
 
   await loadEvents(client, eventsRoot);
 
-  const apiServer = startApiServer(env);
+  const apiServer = startApiServer(env, client);
   const giveawayInterval = startGiveawayWatcher(client);
   const reminderInterval = startReminderWatcher(client);
 

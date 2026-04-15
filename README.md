@@ -13,6 +13,7 @@ A greenfield TypeScript Discord bot built with `discord.js v14`, `mongoose`, `ex
 - Giveaways with button join and auto winner selection
 - Utility + fun commands
 - Express dashboard API scaffold (`/health`, settings GET/PATCH)
+- Button-based CAPTCHA verification flow (`/verify` web page + Discord button)
 
 ## Folder Structure
 
@@ -62,6 +63,23 @@ Optional:
 - `API_PORT`
 - `AI_API_KEY`
 
+Verification (Railway/web) variables:
+
+- `VERIFY_CHANNEL_ID` (channel where verification embed/button is posted)
+- `VERIFIED_ROLE_ID` or `VERIFIED_ROLE_NAME`
+- `UNVERIFIED_ROLE_ID` or `UNVERIFIED_ROLE_NAME`
+- `BASE_URL` (for example: `https://your-app.up.railway.app`)
+- `HCAPTCHA_SITEKEY`
+- `HCAPTCHA_SECRET`
+- `LOG_CHANNEL_ID` (optional verification logs)
+- `VERIFY_TOKEN_TTL_SEC` (default `600`, must be `300-900`)
+- `VERIFY_BUTTON_COOLDOWN_SEC` (default `15`)
+
+Token/port compatibility:
+
+- `DISCORD_TOKEN` is supported as an alias for `BOT_TOKEN`
+- `PORT` is supported and falls back to `API_PORT`
+
 ## Command Highlights
 
 - Admin: `/help`, `/config`, `/modules`
@@ -72,6 +90,37 @@ Optional:
 - Music: `/play /pause /skip /queue /stop /volume /music247`
 - Giveaways: `/giveaway start|end|reroll|delete`
 - Utility/Fun: `/ping /serverinfo /userinfo /avatar /poll /remind /math /splitvc /movevc /meme /eightball /joke /roll /trivia /askai`
+
+## Verification Flow
+
+1. On startup, the bot checks `VERIFY_CHANNEL_ID` and ensures exactly one verification message exists.
+2. The message contains:
+   - Title: `Server Verification`
+   - Description: `Click the button below to verify and gain access to the server.`
+   - Button: `Verify`
+3. Clicking `Verify` creates a secure short-lived token and returns an ephemeral verification link.
+4. `/verify` renders an hCaptcha page.
+5. On successful CAPTCHA:
+   - token is consumed (single-use)
+   - `Verified` role is assigned
+   - `Unverified` role is removed (if present)
+   - verification log is posted to `LOG_CHANNEL_ID` (if configured)
+
+## hCaptcha Setup
+
+1. Create an account at [hCaptcha](https://www.hcaptcha.com/) and register your Railway domain.
+2. Copy the generated Site Key and Secret.
+3. Add them to environment variables:
+   - `HCAPTCHA_SITEKEY`
+   - `HCAPTCHA_SECRET`
+
+## Railway Deployment
+
+1. Push this repo to GitHub.
+2. In Railway, create a new project from the repo.
+3. Set all required environment variables (`BOT_TOKEN`/`DISCORD_TOKEN`, `CLIENT_ID`, `MONGO_URI`, verification vars).
+4. Ensure `BASE_URL` matches your Railway public URL.
+5. Deploy. Railway provides `PORT` automatically; the app already supports it.
 
 ## Notes
 

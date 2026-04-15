@@ -1,4 +1,5 @@
 import { EmbedBuilder, type GuildMember } from "discord.js";
+import { loadEnv } from "../config/env.js";
 import type { EventDefinition } from "../core/types.js";
 import { checkAndSetCooldown } from "../core/guards/cooldownGuard.js";
 import { isModuleEnabled } from "../core/guards/moduleGuard.js";
@@ -6,10 +7,13 @@ import { hasPermissionForCommand } from "../core/guards/permissionGuard.js";
 import { getGuildSettings } from "../core/services/guildSettingsService.js";
 import { handleGiveawayJoin } from "../systems/giveaways.js";
 import { handleTicketCreateButton, TICKET_CREATE_BUTTON_ID } from "../systems/tickets.js";
+import { handleVerificationButton, isVerificationButton } from "../systems/verification.js";
 import { handleSplitVcButton, isSplitVcButton } from "../systems/vcTeamRandomizer.js";
 import { errorEmbed, warningEmbed } from "../utils/embeds.js";
 import { logger } from "../utils/logger.js";
 import { msToHuman } from "../utils/time.js";
+
+const env = loadEnv();
 
 const event: EventDefinition = {
   name: "interactionCreate",
@@ -31,6 +35,11 @@ const event: EventDefinition = {
     if (interaction.isButton()) {
       if (!interaction.guildId) {
         await interaction.reply({ content: "This interaction only works in servers.", ephemeral: true });
+        return;
+      }
+
+      if (isVerificationButton(interaction.customId)) {
+        await handleVerificationButton(interaction, env);
         return;
       }
 

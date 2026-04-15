@@ -1,8 +1,10 @@
 import express from "express";
 import type { Server } from "node:http";
 import type { Env } from "../config/env.js";
+import type { BotClient } from "../core/types.js";
 import { getGuildSettings, updateGuildSettings } from "../core/services/guildSettingsService.js";
 import { MODULE_NAMES } from "../core/constants.js";
+import { buildVerifyPage, completeVerification } from "../systems/verification.js";
 import { logger } from "../utils/logger.js";
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -47,10 +49,11 @@ function pickUpdatableSettings(body: unknown) {
   return payload;
 }
 
-export function startApiServer(env: Env): Server | null {
+export function startApiServer(env: Env, client: BotClient): Server | null {
   const app = express();
 
   app.use(express.json());
+  app.use(express.urlencoded({ extended: false }));
 
   app.get("/health", (_req, res) => {
     res.json({ ok: true, uptime: process.uptime(), timestamp: new Date().toISOString() });
@@ -65,6 +68,31 @@ export function startApiServer(env: Env): Server | null {
     const payload = pickUpdatableSettings(req.body);
     const updated = await updateGuildSettings(req.params.guildId, payload as never);
     res.json(updated);
+  });
+
+  app.get("/verify", (req, res) => {
+    const userId = typeof req.query.userId === "string" ? req.query.userId : undefined;
+    const token = typeof req.query.token === "string" ? req.query.token : undefined;
+    const page = buildVerifyPage(env, userId, token);
+
+    res.status(page.status).type("html").send(page.html);
+  });
+
+  app.post("/verify", async (req, res) => {
+    const userId = typeof req.body.userId === "string" ? req.body.userId : "";
+    const token = typeof req.body.token === "string" ? req.body.token : "";
+    const captchaResponse = typeof req.body["h-captcha-response"] === "string" ? req.body["h-captcha-response"] : undefined;
+
+    const page = await completeVerification({
+      env,
+      client,
+      userId,
+      token,
+      captchaResponse,
+      remoteIp: req.ip
+    });
+
+    res.status(page.status).type("html").send(page.html);
   });
 
   try {
