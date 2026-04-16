@@ -3,6 +3,7 @@ import { Client } from "discord.js";
 import mongoose from "mongoose";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { ZodError } from "zod";
 import { startApiServer } from "./api/server.js";
 import { loadEnv } from "./config/env.js";
 import { loadCommands } from "./core/loaders/commandLoader.js";
@@ -98,6 +99,21 @@ async function bootstrap() {
 }
 
 bootstrap().catch((error) => {
+  if (error instanceof ZodError) {
+    const issueSummary = error.issues
+      .map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`)
+      .join("; ");
+
+    logger.error({ issues: error.issues, summary: issueSummary }, "Fatal startup error (env validation)");
+    console.error(`Fatal startup error (env validation): ${issueSummary}`);
+    process.exit(1);
+  }
+
   logger.error({ err: error }, "Fatal startup error");
+  if (error instanceof Error) {
+    console.error(`Fatal startup error: ${error.name}: ${error.message}`);
+  } else {
+    console.error("Fatal startup error:", error);
+  }
   process.exit(1);
 });

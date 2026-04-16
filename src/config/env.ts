@@ -3,6 +3,33 @@ import { z } from "zod";
 
 config();
 
+const optionalPortSchema = z.preprocess((value) => {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+
+  const num = Number(value);
+  if (!Number.isFinite(num)) {
+    return undefined;
+  }
+
+  return num;
+}, z.number().int().positive().optional());
+
+const optionalNumberWithDefault = (defaultValue: number, min: number, max: number) =>
+  z.preprocess((value) => {
+    if (value === undefined || value === null) {
+      return undefined;
+    }
+
+    const num = Number(value);
+    if (!Number.isFinite(num)) {
+      return undefined;
+    }
+
+    return num;
+  }, z.number().min(min).max(max).default(defaultValue));
+
 const rawEnvSchema = z.object({
   BOT_TOKEN: z.string().optional(),
   DISCORD_TOKEN: z.string().optional(),
@@ -11,8 +38,8 @@ const rawEnvSchema = z.object({
   MONGO_URI: z.string().min(1, "MONGO_URI is required"),
   DEV_GUILD_ID: z.string().optional(),
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
-  API_PORT: z.coerce.number().optional(),
-  PORT: z.coerce.number().optional(),
+  API_PORT: optionalPortSchema,
+  PORT: optionalPortSchema,
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
   DEFAULT_CURRENCY: z.string().default("coins"),
   AI_API_KEY: z.string().optional(),
@@ -27,8 +54,8 @@ const rawEnvSchema = z.object({
   UNVERIFIED_ROLE_NAME: z.string().default("Unverified"),
   MEMBER_ROLE_ID: z.string().optional(),
   MEMBER_ROLE_NAME: z.string().default("Member"),
-  VERIFY_TOKEN_TTL_SEC: z.coerce.number().min(300).max(900).default(600),
-  VERIFY_BUTTON_COOLDOWN_SEC: z.coerce.number().min(3).max(120).default(15)
+  VERIFY_TOKEN_TTL_SEC: optionalNumberWithDefault(600, 300, 900),
+  VERIFY_BUTTON_COOLDOWN_SEC: optionalNumberWithDefault(15, 3, 120)
 });
 
 export interface Env extends z.infer<typeof rawEnvSchema> {
@@ -36,8 +63,23 @@ export interface Env extends z.infer<typeof rawEnvSchema> {
   API_PORT: number;
 }
 
+function normalizeProcessEnv(input: NodeJS.ProcessEnv): Record<string, unknown> {
+  const normalized: Record<string, unknown> = {};
+
+  for (const [key, value] of Object.entries(input)) {
+    if (typeof value !== "string") {
+      continue;
+    }
+
+    const trimmed = value.trim();
+    normalized[key] = trimmed.length === 0 ? undefined : trimmed;
+  }
+
+  return normalized;
+}
+
 export function loadEnv(): Env {
-  const parsed = rawEnvSchema.parse(process.env);
+  const parsed = rawEnvSchema.parse(normalizeProcessEnv(process.env));
   const botToken = parsed.BOT_TOKEN ?? parsed.DISCORD_TOKEN;
 
   if (!botToken || botToken.trim().length === 0) {
