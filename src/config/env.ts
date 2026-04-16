@@ -46,6 +46,8 @@ const rawEnvSchema = z.object({
   VERIFY_CHANNEL_ID: z.string().optional(),
   LOG_CHANNEL_ID: z.string().optional(),
   BASE_URL: z.string().url("BASE_URL must be a valid URL").optional(),
+  RECAPTCHA_SITE_KEY: z.string().optional(),
+  RECAPTCHA_SECRET_KEY: z.string().optional(),
   HCAPTCHA_SECRET: z.string().optional(),
   HCAPTCHA_SITEKEY: z.string().optional(),
   VERIFIED_ROLE_ID: z.string().optional(),

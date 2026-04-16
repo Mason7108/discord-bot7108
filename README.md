@@ -69,8 +69,8 @@ Verification (Railway/web) variables:
 - `VERIFIED_ROLE_ID` or `VERIFIED_ROLE_NAME`
 - `UNVERIFIED_ROLE_ID` or `UNVERIFIED_ROLE_NAME`
 - `BASE_URL` (for example: `https://your-app.up.railway.app`)
-- `HCAPTCHA_SITEKEY`
-- `HCAPTCHA_SECRET`
+- `RECAPTCHA_SITE_KEY`
+- `RECAPTCHA_SECRET_KEY`
 - `LOG_CHANNEL_ID` (optional verification logs)
 - `VERIFY_TOKEN_TTL_SEC` (default `600`, must be `300-900`)
 - `VERIFY_BUTTON_COOLDOWN_SEC` (default `15`)
@@ -99,20 +99,20 @@ Token/port compatibility:
    - Description: `Click the button below to verify and gain access to the server.`
    - Button: `Verify`
 3. Clicking `Verify` creates a secure short-lived token and returns an ephemeral verification link.
-4. `/verify` renders an hCaptcha page.
+4. `/verify` renders a Google reCAPTCHA v2 page.
 5. On successful CAPTCHA:
    - token is consumed (single-use)
    - `Verified` role is assigned
    - `Unverified` role is removed (if present)
    - verification log is posted to `LOG_CHANNEL_ID` (if configured)
 
-## hCaptcha Setup
+## Google reCAPTCHA Setup (v2 Checkbox)
 
-1. Create an account at [hCaptcha](https://www.hcaptcha.com/) and register your Railway domain.
-2. Copy the generated Site Key and Secret.
-3. Add them to environment variables:
-   - `HCAPTCHA_SITEKEY`
-   - `HCAPTCHA_SECRET`
+1. In Google reCAPTCHA admin, create a **reCAPTCHA v2 Checkbox** site.
+2. Add your Railway hostname (for example: `discord-bot7108-production.up.railway.app`) to allowed domains.
+3. Copy the keys into Railway variables:
+   - `RECAPTCHA_SITE_KEY`
+   - `RECAPTCHA_SECRET_KEY`
 
 ## Railway Deployment
 

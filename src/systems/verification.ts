@@ -29,6 +29,14 @@ export const VERIFY_BUTTON_ID = "verification:open";
 const VERIFICATION_TITLE = "Server Verification";
 const VERIFICATION_DESCRIPTION = "Click the button below to verify and gain access to the server.";
 
+type CaptchaProvider = "recaptcha" | "hcaptcha";
+
+interface CaptchaConfig {
+  provider: CaptchaProvider;
+  siteKey: string;
+  secret: string;
+}
+
 function verificationEmbed(): EmbedBuilder {
   return new EmbedBuilder().setColor(0x5865f2).setTitle(VERIFICATION_TITLE).setDescription(VERIFICATION_DESCRIPTION).setTimestamp();
 }
@@ -71,7 +79,27 @@ function escapeHtml(value: string): string {
     .replaceAll("'", "&#039;");
 }
 
-function renderPage(title: string, description: string, innerHtml = ""): string {
+function resolveCaptchaConfig(env: Env): CaptchaConfig | null {
+  if (env.RECAPTCHA_SITE_KEY && env.RECAPTCHA_SECRET_KEY) {
+    return {
+      provider: "recaptcha",
+      siteKey: env.RECAPTCHA_SITE_KEY,
+      secret: env.RECAPTCHA_SECRET_KEY
+    };
+  }
+
+  if (env.HCAPTCHA_SITEKEY && env.HCAPTCHA_SECRET) {
+    return {
+      provider: "hcaptcha",
+      siteKey: env.HCAPTCHA_SITEKEY,
+      secret: env.HCAPTCHA_SECRET
+    };
+  }
+
+  return null;
+}
+
+function renderPage(title: string, description: string, innerHtml = "", captchaScriptUrl?: string): string {
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -134,7 +162,7 @@ function renderPage(title: string, description: string, innerHtml = ""): string 
     }
     button:hover { filter: brightness(1.08); }
   </style>
-  <script src="https://js.hcaptcha.com/1/api.js" async defer></script>
+  ${captchaScriptUrl ? `<script src="${escapeHtml(captchaScriptUrl)}" async defer></script>` : ""}
 </head>
 <body>
   <main class="card">
@@ -186,13 +214,13 @@ async function postVerificationLog(
   await channel.send({ embeds: [embed] }).catch(() => null);
 }
 
-async function verifyHCaptcha(input: {
-  secret: string;
+async function verifyCaptcha(input: {
+  config: CaptchaConfig;
   responseToken: string;
   remoteIp?: string;
 }): Promise<boolean> {
   const body = new URLSearchParams({
-    secret: input.secret,
+    secret: input.config.secret,
     response: input.responseToken
   });
 
@@ -200,7 +228,12 @@ async function verifyHCaptcha(input: {
     body.set("remoteip", input.remoteIp);
   }
 
-  const verifyResponse = await fetch("https://hcaptcha.com/siteverify", {
+  const verifyUrl =
+    input.config.provider === "recaptcha"
+      ? "https://www.google.com/recaptcha/api/siteverify"
+      : "https://hcaptcha.com/siteverify";
+
+  const verifyResponse = await fetch(verifyUrl, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body
@@ -342,15 +375,20 @@ export function buildVerifyPage(env: Env, userId?: string, token?: string): { st
     };
   }
 
-  if (!env.HCAPTCHA_SITEKEY || !env.HCAPTCHA_SECRET) {
+  const captchaConfig = resolveCaptchaConfig(env);
+  if (!captchaConfig) {
     return {
       status: 500,
       html: renderPage(
         "Verification Unavailable",
-        "CAPTCHA is not configured yet. Ask a server admin to set HCAPTCHA_SITEKEY and HCAPTCHA_SECRET."
+        "CAPTCHA is not configured yet. Set RECAPTCHA_SITE_KEY and RECAPTCHA_SECRET_KEY."
       )
     };
   }
+
+  const widgetClass = captchaConfig.provider === "recaptcha" ? "g-recaptcha" : "h-captcha";
+  const scriptUrl =
+    captchaConfig.provider === "recaptcha" ? "https://www.google.com/recaptcha/api.js" : "https://js.hcaptcha.com/1/api.js";
 
   return {
     status: 200,
@@ -360,9 +398,10 @@ export function buildVerifyPage(env: Env, userId?: string, token?: string): { st
       `<form method="POST" action="/verify">
         <input type="hidden" name="userId" value="${escapeHtml(userId)}" />
         <input type="hidden" name="token" value="${escapeHtml(token)}" />
-        <div class="h-captcha" data-sitekey="${escapeHtml(env.HCAPTCHA_SITEKEY)}"></div>
+        <div class="${widgetClass}" data-sitekey="${escapeHtml(captchaConfig.siteKey)}"></div>
         <button type="submit">Submit Verification</button>
-      </form>`
+      </form>`,
+      scriptUrl
     )
   };
 }
@@ -392,15 +431,16 @@ export async function completeVerification(input: {
     };
   }
 
-  if (!input.captchaResponse || !env.HCAPTCHA_SECRET) {
+  const captchaConfig = resolveCaptchaConfig(env);
+  if (!input.captchaResponse || !captchaConfig) {
     return {
       status: 400,
       html: renderPage("CAPTCHA Required", "Complete the CAPTCHA before submitting.")
     };
   }
 
-  const captchaOk = await verifyHCaptcha({
-    secret: env.HCAPTCHA_SECRET,
+  const captchaOk = await verifyCaptcha({
+    config: captchaConfig,
     responseToken: input.captchaResponse,
     remoteIp: input.remoteIp
   }).catch(() => false);

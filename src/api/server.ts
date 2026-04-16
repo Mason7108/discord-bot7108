@@ -81,7 +81,9 @@ export function startApiServer(env: Env, client: BotClient): Server | null {
   app.post("/verify", async (req, res) => {
     const userId = typeof req.body.userId === "string" ? req.body.userId : "";
     const token = typeof req.body.token === "string" ? req.body.token : "";
-    const captchaResponse = typeof req.body["h-captcha-response"] === "string" ? req.body["h-captcha-response"] : undefined;
+    const recaptchaResponse = typeof req.body["g-recaptcha-response"] === "string" ? req.body["g-recaptcha-response"] : undefined;
+    const hcaptchaResponse = typeof req.body["h-captcha-response"] === "string" ? req.body["h-captcha-response"] : undefined;
+    const captchaResponse = recaptchaResponse ?? hcaptchaResponse;
 
     const page = await completeVerification({
       env,
