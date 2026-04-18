@@ -14,6 +14,7 @@ import {
 } from "discord.js";
 import type { Env } from "../config/env.js";
 import { logger } from "../utils/logger.js";
+import { UserProfileModel } from "../models/UserProfile.js";
 import {
   consumeVerificationSession,
   createVerificationSession,
@@ -509,6 +510,17 @@ export async function completeVerification(input: {
   await postVerificationLog(guild, env, {
     userTag: member.user.tag,
     userId: member.id
+  });
+
+  await UserProfileModel.findOneAndUpdate(
+    { guildId: guild.id, userId: member.id },
+    {
+      $setOnInsert: { guildId: guild.id, userId: member.id },
+      $set: { hasVerified: true, verifiedAt: new Date() }
+    },
+    { upsert: true }
+  ).catch((error) => {
+    logger.error({ err: error, guildId: guild.id, userId: member.id }, "Failed to persist verification state");
   });
 
   logger.info({ guildId: guild.id, userId: member.id }, "User verified through CAPTCHA");

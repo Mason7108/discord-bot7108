@@ -1,6 +1,7 @@
 import { EmbedBuilder, PermissionFlagsBits, type Guild, type Role } from "discord.js";
 import { loadEnv } from "../config/env.js";
 import type { EventDefinition } from "../core/types.js";
+import { UserProfileModel } from "../models/UserProfile.js";
 import { getGuildSettings } from "../core/services/guildSettingsService.js";
 import { sendModLog } from "../systems/logging.js";
 import { sendWelcomeMessage } from "../systems/welcome.js";
@@ -34,6 +35,11 @@ const event: EventDefinition = {
     if (!botMember?.permissions.has(PermissionFlagsBits.ManageRoles)) {
       logger.warn({ guildId: guild.id }, "Cannot enforce unverified-on-join: missing ManageRoles permission");
     } else {
+      const profile = await UserProfileModel.findOne({ guildId: guild.id, userId: member.id })
+        .lean<{ hasVerified?: boolean } | null>()
+        .catch(() => null);
+      const wasPreviouslyVerified = profile?.hasVerified === true;
+
       const unverifiedRole = findRole(guild, env.UNVERIFIED_ROLE_ID, env.UNVERIFIED_ROLE_NAME);
       const verifiedRole = findRole(guild, env.VERIFIED_ROLE_ID, env.VERIFIED_ROLE_NAME);
       const memberRole = findRole(guild, env.MEMBER_ROLE_ID, env.MEMBER_ROLE_NAME);
@@ -43,16 +49,30 @@ const event: EventDefinition = {
         Boolean(role && role.position < highestBotRolePosition && role.id !== guild.roles.everyone.id);
 
       try {
-        if (canManageRole(unverifiedRole) && !member.roles.cache.has(unverifiedRole.id)) {
-          await member.roles.add(unverifiedRole.id, "New joiner starts as unverified");
-        }
+        if (wasPreviouslyVerified) {
+          if (canManageRole(unverifiedRole) && member.roles.cache.has(unverifiedRole.id)) {
+            await member.roles.remove(unverifiedRole.id, "Bypass verification for previously verified rejoin");
+          }
 
-        if (canManageRole(verifiedRole) && member.roles.cache.has(verifiedRole.id)) {
-          await member.roles.remove(verifiedRole.id, "Reset to unverified on join");
-        }
+          if (canManageRole(verifiedRole) && !member.roles.cache.has(verifiedRole.id)) {
+            await member.roles.add(verifiedRole.id, "Restore verified role for returning member");
+          }
 
-        if (canManageRole(memberRole) && member.roles.cache.has(memberRole.id)) {
-          await member.roles.remove(memberRole.id, "Reset to unverified on join");
+          if (canManageRole(memberRole) && !member.roles.cache.has(memberRole.id)) {
+            await member.roles.add(memberRole.id, "Restore member role for returning member");
+          }
+        } else {
+          if (canManageRole(unverifiedRole) && !member.roles.cache.has(unverifiedRole.id)) {
+            await member.roles.add(unverifiedRole.id, "New joiner starts as unverified");
+          }
+
+          if (canManageRole(verifiedRole) && member.roles.cache.has(verifiedRole.id)) {
+            await member.roles.remove(verifiedRole.id, "Reset to unverified on join");
+          }
+
+          if (canManageRole(memberRole) && member.roles.cache.has(memberRole.id)) {
+            await member.roles.remove(memberRole.id, "Reset to unverified on join");
+          }
         }
       } catch (error) {
         logger.error({ err: error, guildId: guild.id, userId: member.id }, "Failed to enforce unverified role on join");

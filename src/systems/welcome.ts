@@ -34,10 +34,11 @@ export async function sendWelcomeMessage(member: GuildMember, env: Env): Promise
 
   // The guild member count at join-time provides the member position card value.
   const memberNumber = member.guild.memberCount;
+  const usernameLabel = member.user.globalName ?? member.user.username;
 
   const embed = new EmbedBuilder()
     .setColor(0x57f287)
-    .setTitle(`Welcome ${member}`)
+    .setTitle(`Welcome @${usernameLabel}`)
     .setDescription(`You are **Member #${memberNumber}**.\nWelcome to **${member.guild.name}**!`)
     .setThumbnail(member.user.displayAvatarURL({ size: 512 }))
     .setTimestamp();

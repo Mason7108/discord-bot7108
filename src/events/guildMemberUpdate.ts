@@ -1,6 +1,7 @@
 import { PermissionFlagsBits, type Guild, type Role } from "discord.js";
 import { loadEnv } from "../config/env.js";
 import type { EventDefinition } from "../core/types.js";
+import { UserProfileModel } from "../models/UserProfile.js";
 import { logger } from "../utils/logger.js";
 
 const env = loadEnv();
@@ -56,6 +57,15 @@ const event: EventDefinition = {
 
     try {
       await newMember.roles.add(memberRole.id, `Auto-assign ${memberRole.name} after verification`);
+      await UserProfileModel.findOneAndUpdate(
+        { guildId: guild.id, userId: newMember.id },
+        {
+          $setOnInsert: { guildId: guild.id, userId: newMember.id },
+          $set: { hasVerified: true, verifiedAt: new Date() }
+        },
+        { upsert: true }
+      ).catch(() => null);
+
       logger.info(
         { guildId: guild.id, userId: newMember.id, verifiedRoleId: verifiedRole.id, memberRoleId: memberRole.id },
         "Auto-assigned member role after verification"

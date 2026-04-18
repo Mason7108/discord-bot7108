@@ -63,6 +63,8 @@ export interface UserProfileShape {
   coins: number;
   inventory: string[];
   warnings: Array<{ moderatorId: string; reason: string; createdAt: Date }>;
+  hasVerified: boolean;
+  verifiedAt?: Date;
   lastDailyAt?: Date;
   lastWorkAt?: Date;
 }

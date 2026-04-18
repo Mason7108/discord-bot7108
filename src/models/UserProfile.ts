@@ -29,6 +29,8 @@ const userProfileSchema = new Schema<UserProfileDocument>(
     coins: { type: Number, default: 0 },
     inventory: { type: [String], default: [] },
     warnings: { type: [warningSchema], default: [] },
+    hasVerified: { type: Boolean, default: false },
+    verifiedAt: { type: Date },
     lastDailyAt: { type: Date },
     lastWorkAt: { type: Date }
   },
