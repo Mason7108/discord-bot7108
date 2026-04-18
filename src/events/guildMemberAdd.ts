@@ -1,4 +1,4 @@
-import { EmbedBuilder, PermissionFlagsBits, type Guild, type Role } from "discord.js";
+import { ChannelType, EmbedBuilder, PermissionFlagsBits, type Guild, type Role, type TextChannel } from "discord.js";
 import { loadEnv } from "../config/env.js";
 import type { EventDefinition } from "../core/types.js";
 import { UserProfileModel } from "../models/UserProfile.js";
@@ -16,6 +16,52 @@ function findRole(guild: Guild, roleId: string | undefined, roleName: string): R
 
   const normalized = roleName.trim().toLowerCase();
   return guild.roles.cache.find((role) => role.name.trim().toLowerCase() === normalized) ?? null;
+}
+
+async function detectPriorVerificationFromLogs(guild: Guild, userId: string): Promise<boolean> {
+  if (!env.LOG_CHANNEL_ID) {
+    return false;
+  }
+
+  const logChannelRaw = guild.channels.cache.get(env.LOG_CHANNEL_ID) ?? (await guild.channels.fetch(env.LOG_CHANNEL_ID).catch(() => null));
+  if (!logChannelRaw || logChannelRaw.type !== ChannelType.GuildText) {
+    return false;
+  }
+
+  const logChannel = logChannelRaw as TextChannel;
+  let before: string | undefined;
+
+  for (let page = 0; page < 5; page += 1) {
+    const batch = await logChannel.messages.fetch({ limit: 100, before }).catch(() => null);
+    if (!batch || batch.size === 0) {
+      break;
+    }
+
+    for (const message of batch.values()) {
+      if (message.author.id !== guild.client.user?.id) {
+        continue;
+      }
+
+      const matched = message.embeds.some((embed) => {
+        if (embed.title !== "Verification Successful") {
+          return false;
+        }
+
+        return (embed.fields ?? []).some((field) => field.name === "User ID" && field.value.includes(userId));
+      });
+
+      if (matched) {
+        return true;
+      }
+    }
+
+    before = batch.lastKey();
+    if (!before) {
+      break;
+    }
+  }
+
+  return false;
 }
 
 const event: EventDefinition = {
@@ -36,9 +82,24 @@ const event: EventDefinition = {
       logger.warn({ guildId: guild.id }, "Cannot enforce unverified-on-join: missing ManageRoles permission");
     } else {
       const profile = await UserProfileModel.findOne({ guildId: guild.id, userId: member.id })
-        .lean<{ hasVerified?: boolean } | null>()
+        .lean<{ hasVerified?: boolean; verifiedAt?: Date } | null>()
         .catch(() => null);
-      const wasPreviouslyVerified = profile?.hasVerified === true;
+
+      let wasPreviouslyVerified = profile?.hasVerified === true;
+      if (!wasPreviouslyVerified) {
+        const hasLegacyVerificationLog = await detectPriorVerificationFromLogs(guild, member.id);
+        if (hasLegacyVerificationLog) {
+          wasPreviouslyVerified = true;
+          await UserProfileModel.findOneAndUpdate(
+            { guildId: guild.id, userId: member.id },
+            {
+              $setOnInsert: { guildId: guild.id, userId: member.id },
+              $set: { hasVerified: true, verifiedAt: new Date() }
+            },
+            { upsert: true }
+          ).catch(() => null);
+        }
+      }
 
       const unverifiedRole = findRole(guild, env.UNVERIFIED_ROLE_ID, env.UNVERIFIED_ROLE_NAME);
       const verifiedRole = findRole(guild, env.VERIFIED_ROLE_ID, env.VERIFIED_ROLE_NAME);
