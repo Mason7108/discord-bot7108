@@ -14,6 +14,8 @@ A greenfield TypeScript Discord bot built with `discord.js v14`, `mongoose`, `ex
 - Utility + fun commands
 - Express dashboard API scaffold (`/health`, settings GET/PATCH)
 - Button-based CAPTCHA verification flow (`/verify` web page + Discord button)
+- Welcome embed system for new members
+- Message logging for deletes/edits (with jump-to-message button on edits)
 
 ## Folder Structure
 
@@ -66,6 +68,8 @@ Optional:
 Verification (Railway/web) variables:
 
 - `VERIFY_CHANNEL_ID` (channel where verification embed/button is posted)
+- `WELCOME_CHANNEL_ID` (channel for welcome embeds)
+- `MESSAGE_LOG_CHANNEL_ID` (channel for message delete/edit logs)
 - `VERIFIED_ROLE_ID` or `VERIFIED_ROLE_NAME`
 - `UNVERIFIED_ROLE_ID` or `UNVERIFIED_ROLE_NAME`
 - `BASE_URL` (for example: `https://your-app.up.railway.app`)

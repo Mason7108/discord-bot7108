@@ -3,6 +3,7 @@ import { loadEnv } from "../config/env.js";
 import type { EventDefinition } from "../core/types.js";
 import { getGuildSettings } from "../core/services/guildSettingsService.js";
 import { sendModLog } from "../systems/logging.js";
+import { sendWelcomeMessage } from "../systems/welcome.js";
 import { logger } from "../utils/logger.js";
 
 const env = loadEnv();
@@ -66,6 +67,7 @@ const event: EventDefinition = {
       .setTimestamp();
 
     await sendModLog(member.guild, settings, embed);
+    await sendWelcomeMessage(member, env);
   }
 };
 

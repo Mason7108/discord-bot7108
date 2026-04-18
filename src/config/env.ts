@@ -44,6 +44,8 @@ const rawEnvSchema = z.object({
   DEFAULT_CURRENCY: z.string().default("coins"),
   AI_API_KEY: z.string().optional(),
   VERIFY_CHANNEL_ID: z.string().optional(),
+  WELCOME_CHANNEL_ID: z.string().optional(),
+  MESSAGE_LOG_CHANNEL_ID: z.string().optional(),
   LOG_CHANNEL_ID: z.string().optional(),
   BASE_URL: z.string().url("BASE_URL must be a valid URL").optional(),
   RECAPTCHA_SITE_KEY: z.string().optional(),
