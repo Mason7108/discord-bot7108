@@ -48,6 +48,7 @@ export interface GuildSettingsShape {
   modLogChannelId?: string;
   automod: AutoModSettings;
   ticketCategoryId?: string;
+  ticketHistoryChannelId?: string;
   staffRoleIds: string[];
   levelRoles: Array<{ level: number; roleId: string }>;
   economyEnabled: boolean;

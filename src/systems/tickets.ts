@@ -3,6 +3,7 @@ import {
   AttachmentBuilder,
   ButtonBuilder,
   ButtonStyle,
+  ChannelType,
   EmbedBuilder,
   ModalBuilder,
   PermissionFlagsBits,
@@ -10,13 +11,17 @@ import {
   TextInputStyle,
   type ButtonInteraction,
   type ChatInputCommandInteraction,
+  type Guild,
   type GuildMember,
   type GuildTextBasedChannel,
-  type ModalSubmitInteraction
+  type ModalSubmitInteraction,
+  type TextChannel
 } from "discord.js";
-import { TicketRecordModel } from "../models/TicketRecord.js";
-import { createTicketChannel } from "./logging.js";
+import { getGuildSettings } from "../core/services/guildSettingsService.js";
 import type { GuildSettingsShape } from "../core/types.js";
+import { TicketRecordModel } from "../models/TicketRecord.js";
+import { logger } from "../utils/logger.js";
+import { createTicketChannel } from "./logging.js";
 
 export const TICKET_CREATE_BUTTON_ID = "ticket_create";
 export const TICKET_CLOSE_BUTTON_ID = "ticket_close";
@@ -25,6 +30,7 @@ export const TICKET_CLAIM_BUTTON_ID = "ticket_claim";
 export const TICKET_CLOSE_CONFIRM_BUTTON_ID = "ticket_close_confirm";
 export const TICKET_CLOSE_REASON_MODAL_ID = "ticket_close_reason_modal";
 const TICKET_CLOSE_REASON_INPUT_ID = "reason";
+const TICKET_TRANSCRIPT_BUTTON_LABEL = "View Online Transcript";
 
 function ticketStaffRoleIds(settings: GuildSettingsShape): string[] {
   // Moderator policy roles are always treated as ticket staff visibility roles.
@@ -44,13 +50,9 @@ function isTicketStaffMember(member: GuildMember, settings: GuildSettingsShape):
 
 function ticketControlsRow(): ActionRowBuilder<ButtonBuilder> {
   return new ActionRowBuilder<ButtonBuilder>().addComponents(
-    new ButtonBuilder().setCustomId(TICKET_CLOSE_BUTTON_ID).setLabel("Close").setStyle(ButtonStyle.Danger).setEmoji("🔒"),
-    new ButtonBuilder()
-      .setCustomId(TICKET_CLOSE_WITH_REASON_BUTTON_ID)
-      .setLabel("Close With Reason")
-      .setStyle(ButtonStyle.Danger)
-      .setEmoji("🔒"),
-    new ButtonBuilder().setCustomId(TICKET_CLAIM_BUTTON_ID).setLabel("Claim").setStyle(ButtonStyle.Success).setEmoji("🙋")
+    new ButtonBuilder().setCustomId(TICKET_CLOSE_BUTTON_ID).setLabel("Close").setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId(TICKET_CLOSE_WITH_REASON_BUTTON_ID).setLabel("Close With Reason").setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId(TICKET_CLAIM_BUTTON_ID).setLabel("Claim").setStyle(ButtonStyle.Success)
   );
 }
 
@@ -64,7 +66,7 @@ function ticketPromptEmbed(): EmbedBuilder {
 
 function closeConfirmationRow(): ActionRowBuilder<ButtonBuilder> {
   return new ActionRowBuilder<ButtonBuilder>().addComponents(
-    new ButtonBuilder().setCustomId(TICKET_CLOSE_CONFIRM_BUTTON_ID).setLabel("Close").setStyle(ButtonStyle.Primary).setEmoji("✅")
+    new ButtonBuilder().setCustomId(TICKET_CLOSE_CONFIRM_BUTTON_ID).setLabel("Close").setStyle(ButtonStyle.Primary)
   );
 }
 
@@ -93,6 +95,50 @@ function closeReasonModal(): ModalBuilder {
     .addComponents(new ActionRowBuilder<TextInputBuilder>().addComponents(reasonInput));
 }
 
+function transcriptLinkRow(url: string): ActionRowBuilder<ButtonBuilder> {
+  return new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel(TICKET_TRANSCRIPT_BUTTON_LABEL).setURL(url)
+  );
+}
+
+function userMention(userId?: string): string {
+  if (!userId) {
+    return "Unknown";
+  }
+
+  return `<@${userId}>`;
+}
+
+function buildTicketClosedSummaryEmbed(input: {
+  ownerId: string;
+  closedById: string;
+  claimedById?: string;
+  ticketId: string;
+  openTime: Date;
+  reason: string;
+  ownerTag?: string;
+  ownerAvatarUrl?: string;
+}): EmbedBuilder {
+  const embed = new EmbedBuilder()
+    .setColor(0x57f287)
+    .setTitle("Ticket Closed")
+    .addFields(
+      { name: "Ticket ID", value: input.ticketId, inline: true },
+      { name: "Opened By", value: userMention(input.ownerId), inline: true },
+      { name: "Closed By", value: userMention(input.closedById), inline: true },
+      { name: "Open Time", value: `<t:${Math.floor(input.openTime.getTime() / 1_000)}:F>`, inline: true },
+      { name: "Claimed By", value: input.claimedById ? userMention(input.claimedById) : "Unclaimed", inline: true },
+      { name: "Reason", value: input.reason, inline: false }
+    )
+    .setTimestamp();
+
+  if (input.ownerTag && input.ownerAvatarUrl) {
+    embed.setAuthor({ name: input.ownerTag, iconURL: input.ownerAvatarUrl });
+  }
+
+  return embed;
+}
+
 async function generateTranscript(channel: GuildTextBasedChannel): Promise<string> {
   const fetched = await channel.messages.fetch({ limit: 100 });
   const lines = fetched
@@ -102,12 +148,91 @@ async function generateTranscript(channel: GuildTextBasedChannel): Promise<strin
   return lines.join("\n");
 }
 
+async function sendTicketCloseDm(input: {
+  guild: Guild;
+  ownerId: string;
+  embed: EmbedBuilder;
+  transcriptText: string;
+  transcriptFilename: string;
+}): Promise<{ delivered: boolean; transcriptUrl?: string }> {
+  const owner = await input.guild.client.users.fetch(input.ownerId).catch(() => null);
+  if (!owner) {
+    return { delivered: false };
+  }
+
+  const transcriptFile = new AttachmentBuilder(Buffer.from(input.transcriptText, "utf8"), {
+    name: input.transcriptFilename
+  });
+
+  const sent = await owner.send({ embeds: [input.embed], files: [transcriptFile] }).catch(() => null);
+  if (!sent) {
+    return { delivered: false };
+  }
+
+  const attachmentUrl = sent.attachments.first()?.url;
+  if (attachmentUrl) {
+    await sent.edit({ components: [transcriptLinkRow(attachmentUrl)] }).catch(() => null);
+  }
+
+  return { delivered: true, transcriptUrl: attachmentUrl };
+}
+
+async function resolveTicketHistoryChannel(guild: Guild, settings: GuildSettingsShape): Promise<TextChannel | null> {
+  if (!settings.ticketHistoryChannelId) {
+    return null;
+  }
+
+  const channel =
+    guild.channels.cache.get(settings.ticketHistoryChannelId) ??
+    (await guild.channels.fetch(settings.ticketHistoryChannelId).catch(() => null));
+
+  if (!channel || channel.type !== ChannelType.GuildText) {
+    logger.error(
+      { guildId: guild.id, ticketHistoryChannelId: settings.ticketHistoryChannelId },
+      "Ticket history channel is missing or not a text channel"
+    );
+    return null;
+  }
+
+  return channel as TextChannel;
+}
+
+async function sendTicketHistoryLog(input: {
+  guild: Guild;
+  settings: GuildSettingsShape;
+  embed: EmbedBuilder;
+  transcriptText: string;
+  transcriptFilename: string;
+}): Promise<{ delivered: boolean; transcriptUrl?: string }> {
+  const historyChannel = await resolveTicketHistoryChannel(input.guild, input.settings);
+  if (!historyChannel) {
+    return { delivered: false };
+  }
+
+  const transcriptFile = new AttachmentBuilder(Buffer.from(input.transcriptText, "utf8"), {
+    name: input.transcriptFilename
+  });
+
+  const sent = await historyChannel.send({ embeds: [input.embed], files: [transcriptFile] }).catch(() => null);
+  if (!sent) {
+    return { delivered: false };
+  }
+
+  const attachmentUrl = sent.attachments.first()?.url;
+  if (attachmentUrl) {
+    await sent.edit({ components: [transcriptLinkRow(attachmentUrl)] }).catch(() => null);
+  }
+
+  return { delivered: true, transcriptUrl: attachmentUrl };
+}
+
 async function closeOpenTicket(input: {
   channel: GuildTextBasedChannel;
   recordChannelId: string;
   guildId: string;
   reason: string;
-  closedBy: string;
+  closedByTag: string;
+  closedById: string;
 }): Promise<{ ok: boolean; message: string }> {
   // Centralized close flow used by slash, button, and modal actions.
   const record = await TicketRecordModel.findOne({
@@ -120,23 +245,54 @@ async function closeOpenTicket(input: {
     return { ok: false, message: "This channel is not an open ticket." };
   }
 
+  const settings = await getGuildSettings(input.guildId);
   const transcript = await generateTranscript(input.channel);
-  const transcriptFile = new AttachmentBuilder(Buffer.from(transcript, "utf8"), {
-    name: `ticket-${input.channel.id}-transcript.txt`
+  const transcriptFilename = `ticket-${input.channel.id}-transcript.txt`;
+
+  const ownerUser = await input.channel.client.users.fetch(record.ownerId).catch(() => null);
+  const summaryEmbed = buildTicketClosedSummaryEmbed({
+    ownerId: record.ownerId,
+    closedById: input.closedById,
+    claimedById: record.claimedById,
+    ticketId: record.channelId,
+    openTime: record.createdAt,
+    reason: input.reason,
+    ownerTag: ownerUser?.tag,
+    ownerAvatarUrl: ownerUser?.displayAvatarURL()
   });
 
   const closeEmbed = new EmbedBuilder()
     .setColor(0xed4245)
     .setTitle("Ticket Closed")
     .setDescription(`Reason: ${input.reason}`)
-    .addFields({ name: "Closed By", value: input.closedBy })
+    .addFields({ name: "Closed By", value: `<@${input.closedById}> (${input.closedByTag})` })
     .setTimestamp();
 
-  await input.channel.send({ embeds: [closeEmbed], files: [transcriptFile] });
+  const inChannelTranscript = new AttachmentBuilder(Buffer.from(transcript, "utf8"), {
+    name: transcriptFilename
+  });
+  await input.channel.send({ embeds: [closeEmbed], files: [inChannelTranscript] });
+
+  const [dmResult, historyResult] = await Promise.all([
+    sendTicketCloseDm({
+      guild: input.channel.guild,
+      ownerId: record.ownerId,
+      embed: summaryEmbed,
+      transcriptText: transcript,
+      transcriptFilename
+    }),
+    sendTicketHistoryLog({
+      guild: input.channel.guild,
+      settings,
+      embed: summaryEmbed,
+      transcriptText: transcript,
+      transcriptFilename
+    })
+  ]);
 
   record.status = "closed";
   record.closedAt = new Date();
-  record.transcriptUrl = `attachment://ticket-${input.channel.id}-transcript.txt`;
+  record.transcriptUrl = historyResult.transcriptUrl ?? dmResult.transcriptUrl;
   await record.save();
 
   setTimeout(() => {
@@ -313,7 +469,8 @@ export async function handleTicketActionButton(
     recordChannelId: context.channel.id,
     guildId: interaction.guildId!,
     reason: `Closed by ${interaction.user.tag}`,
-    closedBy: interaction.user.tag
+    closedByTag: interaction.user.tag,
+    closedById: interaction.user.id
   });
 
   if (!result.ok) {
@@ -347,7 +504,8 @@ export async function handleTicketCloseReasonModal(
     recordChannelId: context.channel.id,
     guildId: interaction.guildId!,
     reason: closeReason,
-    closedBy: interaction.user.tag
+    closedByTag: interaction.user.tag,
+    closedById: interaction.user.id
   });
 
   if (!result.ok) {
@@ -371,7 +529,8 @@ export async function closeTicketByChannel(
     recordChannelId: interaction.channel.id,
     guildId: interaction.guild.id,
     reason,
-    closedBy: interaction.user.tag
+    closedByTag: interaction.user.tag,
+    closedById: interaction.user.id
   });
 
   return result;

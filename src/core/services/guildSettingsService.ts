@@ -41,6 +41,7 @@ export async function getGuildSettings(guildId: string): Promise<GuildSettingsSh
     modLogChannelId: created.modLogChannelId,
     automod: created.automod,
     ticketCategoryId: created.ticketCategoryId,
+    ticketHistoryChannelId: created.ticketHistoryChannelId,
     staffRoleIds: created.staffRoleIds,
     levelRoles: created.levelRoles,
     economyEnabled: created.economyEnabled,

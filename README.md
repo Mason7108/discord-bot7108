@@ -88,7 +88,7 @@ Token/port compatibility:
 
 - Admin: `/help`, `/config`, `/modules`
 - Moderation: `/kick /ban /unban /timeout /untimeout /mute /unmute /warn /warnlist /purge /slowmode /lock /unlock`
-- Tickets: `/ticket setup|close|add|remove|syncmods` + in-ticket buttons (`Close`, `Close With Reason`, `Claim`)
+- Tickets: `/ticket setup|close|add|remove|syncmods|modaccess` + in-ticket buttons (`Close`, `Close With Reason`, `Claim`)
 - Economy: `/balance /daily /work /pay /shop /inventory /gamble /coinflip /eco-leaderboard`
 - Leveling: `/level /rank /leaderboard /setlevelrole`
 - Music: `/play /pause /skip /queue /stop /volume /music247`
@@ -131,3 +131,4 @@ Token/port compatibility:
 - Music module defaults to disabled for new guilds; enable with `/modules enable module:music`.
 - `askai` is scaffolded and intentionally guarded behind `AI_API_KEY`.
 - Dashboard auth/OAuth is scaffold-only and must be hardened before production.
+- Ticket history channel can be configured with `/config tickethistory channel:#your-channel`.

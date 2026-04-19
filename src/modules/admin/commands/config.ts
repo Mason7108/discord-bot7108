@@ -33,6 +33,18 @@ const command: CommandDefinition = {
     )
     .addSubcommand((sub) =>
       sub
+        .setName("tickethistory")
+        .setDescription("Set ticket history log channel")
+        .addChannelOption((option) =>
+          option
+            .setName("channel")
+            .setDescription("Text channel for closed ticket history")
+            .addChannelTypes(ChannelType.GuildText)
+            .setRequired(true)
+        )
+    )
+    .addSubcommand((sub) =>
+      sub
         .setName("staffrole")
         .setDescription("Add or remove a ticket staff role")
         .addRoleOption((option) => option.setName("role").setDescription("Role to add/remove").setRequired(true))
@@ -104,6 +116,13 @@ const command: CommandDefinition = {
       const category = interaction.options.getChannel("category", true);
       await updateGuildSettings(interaction.guildId, { ticketCategoryId: category.id } as never);
       await replySuccess(interaction, "Config Updated", `Ticket category set to ${category}.`);
+      return;
+    }
+
+    if (subcommand === "tickethistory") {
+      const channel = interaction.options.getChannel("channel", true);
+      await updateGuildSettings(interaction.guildId, { ticketHistoryChannelId: channel.id } as never);
+      await replySuccess(interaction, "Config Updated", `Ticket history channel set to ${channel}.`);
       return;
     }
 

@@ -22,6 +22,7 @@ function pickUpdatableSettings(body: unknown) {
     "modLogChannelId",
     "automod",
     "ticketCategoryId",
+    "ticketHistoryChannelId",
     "staffRoleIds",
     "levelRoles",
     "economyEnabled",

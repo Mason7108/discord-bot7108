@@ -40,6 +40,7 @@ const guildSettingsSchema = new Schema<GuildSettingsDocument>(
       maxCapsRatio: { type: Number, default: DEFAULT_AUTOMOD.maxCapsRatio }
     },
     ticketCategoryId: { type: String },
+    ticketHistoryChannelId: { type: String },
     staffRoleIds: { type: [String], default: [] },
     levelRoles: { type: [levelRoleSchema], default: [] },
     economyEnabled: { type: Boolean, default: true },

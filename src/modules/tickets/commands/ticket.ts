@@ -38,6 +38,11 @@ const command: CommandDefinition = {
       sub
         .setName("syncmods")
         .setDescription("Sync configured moderator roles into automatic ticket visibility")
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("modaccess")
+        .setDescription("Enable automatic moderator access for tickets")
     ),
   module: "tickets",
   roleRequirement: "Helper",
@@ -78,7 +83,7 @@ const command: CommandDefinition = {
       return;
     }
 
-    if (sub === "syncmods") {
+    if (sub === "syncmods" || sub === "modaccess") {
       const moderatorRoles = settings.rolePolicy.moderatorRoleIds;
       if (moderatorRoles.length === 0) {
         await replyError(
