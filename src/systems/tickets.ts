@@ -60,7 +60,7 @@ function ticketPromptEmbed(): EmbedBuilder {
   return new EmbedBuilder()
     .setColor(0x57f287)
     .setDescription("Thank you for contacting support.\nPlease describe your issue and wait for a response.")
-    .setFooter({ text: "Powered by tickets.bot" })
+    .setFooter({ text: "Powered by bot7108" })
     .setTimestamp();
 }
 
@@ -76,7 +76,7 @@ function closeConfirmationEmbed(userTag: string): EmbedBuilder {
     .setTitle("Close Confirmation")
     .setDescription("Please confirm that you want to close this ticket.")
     .addFields({ name: "Requested By", value: userTag })
-    .setFooter({ text: "Powered by tickets.bot" })
+    .setFooter({ text: "Powered by bot7108" })
     .setTimestamp();
 }
 
@@ -556,7 +556,7 @@ export function createTicketSetupEmbed() {
     .setColor(0x5865f2)
     .setTitle("Support Tickets")
     .setDescription("Press the button below to open a private support ticket.")
-    .setFooter({ text: "Powered by tickets.bot" })
+    .setFooter({ text: "Powered by bot7108" })
     .setTimestamp();
 }
 
