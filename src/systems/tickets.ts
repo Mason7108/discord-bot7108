@@ -101,6 +101,21 @@ function transcriptLinkRow(url: string): ActionRowBuilder<ButtonBuilder> {
   );
 }
 
+async function deleteClosedTicketChannel(channel: GuildTextBasedChannel, guildId: string): Promise<void> {
+  const maybeGuildChannel = channel as GuildTextBasedChannel & { deletable?: boolean };
+  if (typeof maybeGuildChannel.deletable === "boolean" && !maybeGuildChannel.deletable) {
+    logger.warn(
+      { guildId, channelId: channel.id },
+      "Unable to delete closed ticket channel: missing Manage Channels permission"
+    );
+    return;
+  }
+
+  await channel.delete("Ticket closed").catch((error: unknown) => {
+    logger.warn({ err: error, guildId, channelId: channel.id }, "Failed to delete closed ticket channel");
+  });
+}
+
 function userMention(userId?: string): string {
   if (!userId) {
     return "Unknown";
@@ -296,7 +311,7 @@ async function closeOpenTicket(input: {
   await record.save();
 
   setTimeout(() => {
-    void input.channel.delete("Ticket closed").catch(() => null);
+    void deleteClosedTicketChannel(input.channel, input.guildId);
   }, 4_000);
 
   return { ok: true, message: "Ticket closed. Channel will be deleted shortly." };
