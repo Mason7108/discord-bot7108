@@ -35,15 +35,16 @@ export async function sendWelcomeMessage(member: GuildMember, env: Env): Promise
   // The guild member count at join-time provides the member position card value.
   const memberNumber = member.guild.memberCount;
   const usernameLabel = member.user.globalName ?? member.user.username;
+  const avatarUrl = member.user.displayAvatarURL({ size: 512 });
 
   const embed = new EmbedBuilder()
-    .setColor(0x57f287)
+    .setColor(0x2b2d31)
     .setTitle(`Welcome @${usernameLabel}`)
-    .setDescription(`You are **Member #${memberNumber}**.\nWelcome to **${member.guild.name}**!`)
-    .setThumbnail(member.user.displayAvatarURL({ size: 512 }))
+    .setDescription(`### Member #${memberNumber}`)
+    .setThumbnail(avatarUrl)
     .setTimestamp();
 
-  await channel.send({ embeds: [embed] }).catch((error) => {
+  await channel.send({ content: `Welcome ${member} to ${member.guild.name}`, embeds: [embed] }).catch((error) => {
     logger.error({ err: error, guildId: member.guild.id, userId: member.id }, "Failed to send welcome message");
   });
 }

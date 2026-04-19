@@ -89,6 +89,7 @@ export async function logDeletedMessage(input: {
   const embed = new EmbedBuilder()
     .setColor(0xed4245)
     .setTitle("Message Deleted")
+    .setThumbnail(message.author?.displayAvatarURL({ size: 512 }) ?? null)
     .addFields(
       { name: "User", value: authorTag, inline: true },
       { name: "User ID", value: authorId, inline: true },
@@ -148,6 +149,7 @@ export async function logEditedMessage(input: {
   const embed = new EmbedBuilder()
     .setColor(0xfee75c)
     .setTitle("Message Edited")
+    .setThumbnail(author?.displayAvatarURL({ size: 512 }) ?? null)
     .addFields(
       { name: "User", value: authorTag, inline: true },
       { name: "User ID", value: authorId, inline: true },
