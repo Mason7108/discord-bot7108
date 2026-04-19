@@ -6,7 +6,14 @@ import { isModuleEnabled } from "../core/guards/moduleGuard.js";
 import { hasPermissionForCommand } from "../core/guards/permissionGuard.js";
 import { getGuildSettings } from "../core/services/guildSettingsService.js";
 import { handleGiveawayJoin } from "../systems/giveaways.js";
-import { handleTicketCreateButton, TICKET_CREATE_BUTTON_ID } from "../systems/tickets.js";
+import {
+  handleTicketActionButton,
+  handleTicketCloseReasonModal,
+  handleTicketCreateButton,
+  isTicketActionButton,
+  isTicketCloseReasonModal,
+  TICKET_CREATE_BUTTON_ID
+} from "../systems/tickets.js";
 import { handleVerificationButton, isVerificationButton } from "../systems/verification.js";
 import { handleSplitVcButton, isSplitVcButton } from "../systems/vcTeamRandomizer.js";
 import { errorEmbed, warningEmbed } from "../utils/embeds.js";
@@ -50,6 +57,11 @@ const event: EventDefinition = {
         return;
       }
 
+      if (isTicketActionButton(interaction.customId)) {
+        await handleTicketActionButton(interaction, settings);
+        return;
+      }
+
       if (interaction.customId.startsWith("giveaway_join:")) {
         await handleGiveawayJoin(interaction);
         return;
@@ -57,6 +69,20 @@ const event: EventDefinition = {
 
       if (isSplitVcButton(interaction.customId)) {
         await handleSplitVcButton(interaction);
+      }
+
+      return;
+    }
+
+    if (interaction.isModalSubmit()) {
+      if (!interaction.guildId) {
+        await interaction.reply({ content: "This interaction only works in servers.", ephemeral: true });
+        return;
+      }
+
+      if (isTicketCloseReasonModal(interaction.customId)) {
+        const settings = await getGuildSettings(interaction.guildId);
+        await handleTicketCloseReasonModal(interaction, settings);
       }
 
       return;

@@ -9,6 +9,7 @@ const ticketRecordSchema = new Schema<TicketRecordDocument>(
     channelId: { type: String, required: true, unique: true },
     ownerId: { type: String, required: true, index: true },
     status: { type: String, enum: ["open", "closed"], default: "open", index: true },
+    claimedById: { type: String },
     createdAt: { type: Date, default: Date.now },
     closedAt: { type: Date },
     transcriptUrl: { type: String }

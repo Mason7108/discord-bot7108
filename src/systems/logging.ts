@@ -41,6 +41,7 @@ export async function createTicketChannel(
   settings: GuildSettingsShape
 ): Promise<TextChannel | null> {
   const everyoneRole = guild.roles.everyone;
+  const staffRoleIds = [...new Set([...settings.staffRoleIds, ...settings.rolePolicy.moderatorRoleIds])];
 
   const permissionOverwrites = [
     {
@@ -55,7 +56,7 @@ export async function createTicketChannel(
         PermissionsBitField.Flags.ReadMessageHistory
       ]
     },
-    ...settings.staffRoleIds.map((roleId) => ({
+    ...staffRoleIds.map((roleId) => ({
       id: roleId,
       allow: [
         PermissionsBitField.Flags.ViewChannel,

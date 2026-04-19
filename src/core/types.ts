@@ -86,6 +86,7 @@ export interface TicketRecordShape {
   channelId: string;
   ownerId: string;
   status: "open" | "closed";
+  claimedById?: string;
   createdAt: Date;
   closedAt?: Date;
   transcriptUrl?: string;

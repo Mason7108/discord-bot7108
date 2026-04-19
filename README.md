@@ -88,7 +88,7 @@ Token/port compatibility:
 
 - Admin: `/help`, `/config`, `/modules`
 - Moderation: `/kick /ban /unban /timeout /untimeout /mute /unmute /warn /warnlist /purge /slowmode /lock /unlock`
-- Tickets: `/ticket setup|close|add|remove`
+- Tickets: `/ticket setup|close|add|remove|syncmods` + in-ticket buttons (`Close`, `Close With Reason`, `Claim`)
 - Economy: `/balance /daily /work /pay /shop /inventory /gamble /coinflip /eco-leaderboard`
 - Leveling: `/level /rank /leaderboard /setlevelrole`
 - Music: `/play /pause /skip /queue /stop /volume /music247`

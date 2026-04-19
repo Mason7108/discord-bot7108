@@ -6,6 +6,7 @@ import {
   SlashCommandBuilder,
   type GuildTextBasedChannel
 } from "discord.js";
+import { updateGuildSettings } from "../../../core/services/guildSettingsService.js";
 import type { CommandDefinition } from "../../../core/types.js";
 import { closeTicketByChannel, createTicketSetupEmbed, TICKET_CREATE_BUTTON_ID } from "../../../systems/tickets.js";
 import { replyError, replySuccess } from "../../../utils/replies.js";
@@ -32,10 +33,15 @@ const command: CommandDefinition = {
         .setName("remove")
         .setDescription("Remove a member from this ticket")
         .addUserOption((option) => option.setName("user").setDescription("User to remove").setRequired(true))
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("syncmods")
+        .setDescription("Sync configured moderator roles into automatic ticket visibility")
     ),
   module: "tickets",
   roleRequirement: "Helper",
-  async execute({ interaction }) {
+  async execute({ interaction, settings }) {
     if (!interaction.guild || !interaction.channel || interaction.channel.isDMBased()) {
       await replyError(interaction, "Unavailable", "Guild-only command.");
       return;
@@ -69,6 +75,39 @@ const command: CommandDefinition = {
       }
 
       await replySuccess(interaction, "Ticket Closed", result.message, true);
+      return;
+    }
+
+    if (sub === "syncmods") {
+      const moderatorRoles = settings.rolePolicy.moderatorRoleIds;
+      if (moderatorRoles.length === 0) {
+        await replyError(
+          interaction,
+          "No Moderator Roles Configured",
+          "Configure moderator roles first using /config rolepolicy tier:Moderator."
+        );
+        return;
+      }
+
+      const nextStaff = [...new Set([...settings.staffRoleIds, ...moderatorRoles])];
+      await updateGuildSettings(interaction.guild.id, { staffRoleIds: nextStaff } as never);
+
+      if ("permissionOverwrites" in channel) {
+        for (const roleId of moderatorRoles) {
+          await channel.permissionOverwrites.edit(roleId, {
+            ViewChannel: true,
+            SendMessages: true,
+            ReadMessageHistory: true,
+            ManageMessages: true
+          });
+        }
+      }
+
+      await replySuccess(
+        interaction,
+        "Moderator Sync Complete",
+        `Synced **${moderatorRoles.length}** moderator role(s). New tickets will automatically include moderator visibility.`
+      );
       return;
     }
 
