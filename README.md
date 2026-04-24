@@ -91,7 +91,7 @@ Token/port compatibility:
 - Tickets: `/ticket setup|close|add|remove|syncmods|modaccess` + in-ticket buttons (`Close`, `Close With Reason`, `Claim`)
 - Economy: `/balance /daily /work /pay /shop /inventory /gamble /coinflip /eco-leaderboard`
 - Leveling: `/level /rank /leaderboard /setlevelrole`
-- Music: `/play /pause /skip /queue /stop /volume /music247`
+- Music: `/play /pause /resume /skip /queue /stop /volume /music247`
 - Giveaways: `/giveaway start|end|reroll|delete`
 - Utility/Fun: `/ping /serverinfo /userinfo /avatar /poll /remind /math /splitvc /movevc /meme /eightball /joke /roll /trivia /askai`
 

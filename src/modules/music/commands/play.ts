@@ -1,6 +1,6 @@
 import { SlashCommandBuilder, type GuildTextBasedChannel } from "discord.js";
 import type { CommandDefinition } from "../../../core/types.js";
-import { ensureDisTube, getVoiceChannel } from "./shared.js";
+import { ensureDisTube, ensureSameVoiceAsBot, getMissingBotPlaybackPermissions } from "./shared.js";
 import { replyError, replySuccess } from "../../../utils/replies.js";
 
 const command: CommandDefinition = {
@@ -18,21 +18,36 @@ const command: CommandDefinition = {
       return;
     }
 
-    const voiceChannel = getVoiceChannel(interaction);
-    if (!voiceChannel) {
-      await replyError(interaction, "Join Voice", "You must join a voice channel first.");
+    const voiceCheck = ensureSameVoiceAsBot(interaction);
+    if (!voiceCheck.ok || !voiceCheck.voiceChannel) {
+      await replyError(interaction, "Join Voice", voiceCheck.reason ?? "You must join a voice channel first.");
+      return;
+    }
+
+    const missingPermissions = getMissingBotPlaybackPermissions(interaction, voiceCheck.voiceChannel);
+    if (missingPermissions.length > 0) {
+      await replyError(
+        interaction,
+        "Missing Permissions",
+        `I need these permissions in ${voiceCheck.voiceChannel.toString()}: ${missingPermissions.map((permission) => `\`${permission}\``).join(", ")}.`
+      );
       return;
     }
 
     const query = interaction.options.getString("query", true);
 
-    await distube.play(voiceChannel, query, {
-      textChannel: interaction.channel as GuildTextBasedChannel,
-      member: interaction.member as never,
-      metadata: {
-        requestedBy: interaction.user.id
-      }
-    });
+    try {
+      await distube.play(voiceCheck.voiceChannel, query, {
+        textChannel: interaction.channel as GuildTextBasedChannel,
+        member: interaction.member as never,
+        metadata: {
+          requestedBy: interaction.user.id
+        }
+      });
+    } catch {
+      await replyError(interaction, "Playback Failed", "I could not play that song. Try another search or URL.");
+      return;
+    }
 
     await replySuccess(interaction, "Playback Started", `Searching for: **${query}**`);
   }

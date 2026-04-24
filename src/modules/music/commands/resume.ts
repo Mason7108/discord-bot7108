@@ -4,7 +4,7 @@ import { ensureDisTube, ensureSameVoiceAsBot } from "./shared.js";
 import { replyError, replySuccess } from "../../../utils/replies.js";
 
 const command: CommandDefinition = {
-  data: new SlashCommandBuilder().setName("skip").setDescription("Skip current track"),
+  data: new SlashCommandBuilder().setName("resume").setDescription("Resume paused playback"),
   module: "music",
   cooldownSec: 2,
   async execute({ client, interaction }) {
@@ -26,8 +26,8 @@ const command: CommandDefinition = {
       return;
     }
 
-    await queue.skip();
-    await replySuccess(interaction, "Skipped", "Track skipped.");
+    queue.resume();
+    await replySuccess(interaction, "Resumed", "Playback resumed.");
   }
 };
 
