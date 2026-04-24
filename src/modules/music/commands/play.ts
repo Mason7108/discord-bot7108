@@ -1,6 +1,7 @@
 import { SlashCommandBuilder, type GuildTextBasedChannel } from "discord.js";
 import type { CommandDefinition } from "../../../core/types.js";
 import { ensureDisTube, ensureSameVoiceAsBot, getMissingBotPlaybackPermissions } from "./shared.js";
+import { errorEmbed, successEmbed } from "../../../utils/embeds.js";
 import { replyError, replySuccess } from "../../../utils/replies.js";
 
 function normalizePlayQuery(input: string): string {
@@ -76,6 +77,11 @@ const command: CommandDefinition = {
     const query = interaction.options.getString("query", true);
     const normalizedQuery = normalizePlayQuery(query);
 
+    // Song resolution can take >3 seconds; acknowledge early to avoid interaction timeout.
+    if (!interaction.deferred && !interaction.replied) {
+      await interaction.deferReply();
+    }
+
     try {
       await distube.play(voiceCheck.voiceChannel, normalizedQuery, {
         textChannel: interaction.channel as GuildTextBasedChannel,
@@ -86,11 +92,23 @@ const command: CommandDefinition = {
       });
     } catch (error) {
       const errorReason = formatPlaybackError(error);
-      await replyError(interaction, "Playback Failed", `I could not play that song. ${errorReason}`);
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply({
+          embeds: [errorEmbed("Playback Failed", `I could not play that song. ${errorReason}`)]
+        });
+      } else {
+        await replyError(interaction, "Playback Failed", `I could not play that song. ${errorReason}`);
+      }
       return;
     }
 
-    await replySuccess(interaction, "Playback Started", `Searching for: **${normalizedQuery}**`);
+    if (interaction.deferred || interaction.replied) {
+      await interaction.editReply({
+        embeds: [successEmbed("Playback Started", `Searching for: **${normalizedQuery}**`)]
+      });
+    } else {
+      await replySuccess(interaction, "Playback Started", `Searching for: **${normalizedQuery}**`);
+    }
   }
 };
 
