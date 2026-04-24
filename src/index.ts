@@ -1,6 +1,7 @@
 import { Collection, GatewayIntentBits, Partials } from "discord.js";
 import { Client } from "discord.js";
 import mongoose from "mongoose";
+import dns from "node:dns";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { ZodError } from "zod";
@@ -42,6 +43,9 @@ function wireMongoLogs() {
 }
 
 async function bootstrap() {
+  // Railway environments can have flaky IPv6 routes for Discord voice endpoints.
+  dns.setDefaultResultOrder("ipv4first");
+
   const env = loadEnv();
   const client = createClient();
 

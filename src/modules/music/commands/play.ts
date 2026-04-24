@@ -43,6 +43,10 @@ function formatPlaybackError(error: unknown): string {
   return "Unknown playback error.";
 }
 
+function isVoiceConnectionTimeout(error: unknown): boolean {
+  return error instanceof Error && error.message.includes("Cannot connect to the voice channel after 30 seconds");
+}
+
 const command: CommandDefinition = {
   data: new SlashCommandBuilder()
     .setName("play")
@@ -76,6 +80,13 @@ const command: CommandDefinition = {
 
     const query = interaction.options.getString("query", true);
     const normalizedQuery = normalizePlayQuery(query);
+    const playOptions = {
+      textChannel: interaction.channel as GuildTextBasedChannel,
+      member: interaction.member as never,
+      metadata: {
+        requestedBy: interaction.user.id
+      }
+    };
 
     // Song resolution can take >3 seconds; acknowledge early to avoid interaction timeout.
     if (!interaction.deferred && !interaction.replied) {
@@ -83,23 +94,39 @@ const command: CommandDefinition = {
     }
 
     try {
-      await distube.play(voiceCheck.voiceChannel, normalizedQuery, {
-        textChannel: interaction.channel as GuildTextBasedChannel,
-        member: interaction.member as never,
-        metadata: {
-          requestedBy: interaction.user.id
-        }
-      });
+      await distube.play(voiceCheck.voiceChannel, normalizedQuery, playOptions);
     } catch (error) {
-      const errorReason = formatPlaybackError(error);
-      if (interaction.deferred || interaction.replied) {
-        await interaction.editReply({
-          embeds: [errorEmbed("Playback Failed", `I could not play that song. ${errorReason}`)]
-        });
+      if (isVoiceConnectionTimeout(error) && interaction.guildId) {
+        // Retry once after forcing a clean voice reconnect.
+        try {
+          distube.voices.leave(interaction.guildId);
+          await new Promise((resolve) => setTimeout(resolve, 1_000));
+          await distube.play(voiceCheck.voiceChannel, normalizedQuery, playOptions);
+        } catch (retryError) {
+          const errorReason = formatPlaybackError(retryError);
+          const helpfulHint =
+            "Make sure the bot can Connect, Speak, and Use Voice Activity in that channel and try a normal voice channel (not Stage).";
+
+          if (interaction.deferred || interaction.replied) {
+            await interaction.editReply({
+              embeds: [errorEmbed("Playback Failed", `I could not play that song. ${errorReason}\n${helpfulHint}`)]
+            });
+          } else {
+            await replyError(interaction, "Playback Failed", `I could not play that song. ${errorReason}\n${helpfulHint}`);
+          }
+          return;
+        }
       } else {
-        await replyError(interaction, "Playback Failed", `I could not play that song. ${errorReason}`);
+        const errorReason = formatPlaybackError(error);
+        if (interaction.deferred || interaction.replied) {
+          await interaction.editReply({
+            embeds: [errorEmbed("Playback Failed", `I could not play that song. ${errorReason}`)]
+          });
+        } else {
+          await replyError(interaction, "Playback Failed", `I could not play that song. ${errorReason}`);
+        }
+        return;
       }
-      return;
     }
 
     if (interaction.deferred || interaction.replied) {

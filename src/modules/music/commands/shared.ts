@@ -56,6 +56,9 @@ export function getMissingBotPlaybackPermissions(
   if (!permissions.has(PermissionFlagsBits.Speak)) {
     missing.push("Speak");
   }
+  if (!permissions.has(PermissionFlagsBits.UseVAD)) {
+    missing.push("UseVAD");
+  }
 
   return missing;
 }
