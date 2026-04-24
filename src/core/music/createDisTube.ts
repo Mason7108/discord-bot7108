@@ -2,6 +2,7 @@ import { DisTube } from "distube";
 import { SpotifyPlugin } from "@distube/spotify";
 import { YtDlpPlugin } from "@distube/yt-dlp";
 import type { Client } from "discord.js";
+import { logger } from "../../utils/logger.js";
 
 export async function createDisTube(client: Client): Promise<DisTube> {
   const distube = new DisTube(client as never, {
@@ -22,7 +23,7 @@ export async function createDisTube(client: Client): Promise<DisTube> {
   });
 
   bus.on("error", (_channel: unknown, error: unknown) => {
-    console.error("DisTube error:", error);
+    logger.error({ err: error }, "DisTube error");
   });
 
   return distube;
