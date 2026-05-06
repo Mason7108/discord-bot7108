@@ -36,6 +36,15 @@ function formatOldContent(content: string | null | undefined): string {
   return formatContent(content);
 }
 
+function getFirstImageAttachment(message: Message): string | null {
+  const imageAttachment = message.attachments.find((attachment) => {
+    const contentType = attachment.contentType?.toLowerCase() ?? "";
+    return contentType.startsWith("image/");
+  });
+
+  return imageAttachment?.url ?? null;
+}
+
 async function resolveMessageLogChannel(input: {
   message: Message;
   env: Env;
@@ -85,6 +94,7 @@ export async function logDeletedMessage(input: {
   const authorTag = message.author?.tag ?? "Unknown User";
   const authorId = message.author?.id ?? "Unknown";
   const deletedContent = formatContent(message.content);
+  const imageUrl = getFirstImageAttachment(message);
 
   const embed = new EmbedBuilder()
     .setColor(0xed4245)
@@ -98,6 +108,10 @@ export async function logDeletedMessage(input: {
       { name: "Timestamp", value: `<t:${Math.floor(Date.now() / 1_000)}:F>`, inline: false }
     )
     .setTimestamp();
+
+  if (imageUrl) {
+    embed.setImage(imageUrl);
+  }
 
   await channel.send({ embeds: [embed] }).catch((error) => {
     logger.error({ err: error, guildId: message.guildId, channelId: channel.id }, "Failed to send deleted message log");
