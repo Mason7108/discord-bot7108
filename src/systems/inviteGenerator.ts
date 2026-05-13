@@ -12,6 +12,7 @@ import {
 } from "discord.js";
 import type { Env } from "../config/env.js";
 import type { BotClient } from "../core/types.js";
+import { logInviteGenerated } from "./inviteLogs.js";
 import {
   loadInviteGeneratorMessageState,
   saveInviteGeneratorMessageState
@@ -110,7 +111,7 @@ export async function ensureInviteGeneratorMessage(client: BotClient, env: Env):
   logger.info({ channelId: channel.id, messageId: sent.id }, "Created invite generator message");
 }
 
-export async function handleInviteGeneratorButton(interaction: ButtonInteraction): Promise<void> {
+export async function handleInviteGeneratorButton(interaction: ButtonInteraction, env: Env): Promise<void> {
   if (interaction.user.bot) {
     await interaction.reply({ content: "Bots cannot use this button.", ephemeral: true });
     return;
@@ -149,6 +150,14 @@ export async function handleInviteGeneratorButton(interaction: ButtonInteraction
     await interaction.reply({ content: "I couldn't generate an invite link. Check my channel permissions.", ephemeral: true });
     return;
   }
+
+  await logInviteGenerated({
+    env,
+    guild: interaction.guild,
+    invite,
+    generatedByUserId: interaction.user.id,
+    generatedByTag: interaction.user.tag
+  }).catch(() => null);
 
   await interaction.reply({
     content: `Here is your infinite-use invite link:\n${invite.url}`,

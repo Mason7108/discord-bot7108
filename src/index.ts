@@ -23,6 +23,7 @@ function createClient(): BotClient {
       GatewayIntentBits.GuildMembers,
       GatewayIntentBits.GuildMessages,
       GatewayIntentBits.MessageContent,
+      GatewayIntentBits.GuildInvites,
       GatewayIntentBits.GuildVoiceStates,
       GatewayIntentBits.GuildModeration
     ],

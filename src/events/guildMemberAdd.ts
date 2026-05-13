@@ -3,6 +3,7 @@ import { loadEnv } from "../config/env.js";
 import type { EventDefinition } from "../core/types.js";
 import { UserProfileModel } from "../models/UserProfile.js";
 import { getGuildSettings } from "../core/services/guildSettingsService.js";
+import { logInviteUsedByMemberJoin } from "../systems/inviteLogs.js";
 import { sendModLog } from "../systems/logging.js";
 import { sendWelcomeMessage } from "../systems/welcome.js";
 import { logger } from "../utils/logger.js";
@@ -148,6 +149,7 @@ const event: EventDefinition = {
       .setTimestamp();
 
     await sendModLog(member.guild, settings, embed);
+    await logInviteUsedByMemberJoin(member, env);
     await sendWelcomeMessage(member, env);
   }
 };

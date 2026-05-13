@@ -52,7 +52,7 @@ const event: EventDefinition = {
       }
 
       if (isInviteGeneratorButton(interaction.customId)) {
-        await handleInviteGeneratorButton(interaction);
+        await handleInviteGeneratorButton(interaction, env);
         return;
       }
 
