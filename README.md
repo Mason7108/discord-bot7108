@@ -70,6 +70,7 @@ Verification (Railway/web) variables:
 - `VERIFY_CHANNEL_ID` (channel where verification embed/button is posted)
 - `WELCOME_CHANNEL_ID` (channel for welcome embeds)
 - `MESSAGE_LOG_CHANNEL_ID` (channel for message delete/edit logs)
+- `INVITE_GENERATOR_CHANNEL_ID` (channel where the invite-link generator button panel is posted)
 - `VERIFIED_ROLE_ID` or `VERIFIED_ROLE_NAME`
 - `UNVERIFIED_ROLE_ID` or `UNVERIFIED_ROLE_NAME`
 - `BASE_URL` (for example: `https://your-app.up.railway.app`)

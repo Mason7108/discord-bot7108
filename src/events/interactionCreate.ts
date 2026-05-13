@@ -6,6 +6,7 @@ import { isModuleEnabled } from "../core/guards/moduleGuard.js";
 import { hasPermissionForCommand } from "../core/guards/permissionGuard.js";
 import { getGuildSettings } from "../core/services/guildSettingsService.js";
 import { handleGiveawayJoin } from "../systems/giveaways.js";
+import { handleInviteGeneratorButton, isInviteGeneratorButton } from "../systems/inviteGenerator.js";
 import {
   handleTicketActionButton,
   handleTicketCloseReasonModal,
@@ -47,6 +48,11 @@ const event: EventDefinition = {
 
       if (isVerificationButton(interaction.customId)) {
         await handleVerificationButton(interaction, env);
+        return;
+      }
+
+      if (isInviteGeneratorButton(interaction.customId)) {
+        await handleInviteGeneratorButton(interaction);
         return;
       }
 

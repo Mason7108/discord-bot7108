@@ -46,6 +46,7 @@ const rawEnvSchema = z.object({
   VERIFY_CHANNEL_ID: z.string().optional(),
   WELCOME_CHANNEL_ID: z.string().optional(),
   MESSAGE_LOG_CHANNEL_ID: z.string().optional(),
+  INVITE_GENERATOR_CHANNEL_ID: z.string().optional(),
   LOG_CHANNEL_ID: z.string().optional(),
   BASE_URL: z.string().url("BASE_URL must be a valid URL").optional(),
   RECAPTCHA_SITE_KEY: z.string().optional(),
