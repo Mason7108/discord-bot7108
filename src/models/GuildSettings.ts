@@ -44,6 +44,7 @@ const guildSettingsSchema = new Schema<GuildSettingsDocument>(
     staffRoleIds: { type: [String], default: [] },
     levelRoles: { type: [levelRoleSchema], default: [] },
     economyEnabled: { type: Boolean, default: true },
+    gamblingEnabled: { type: Boolean, default: true },
     music247Enabled: { type: Boolean, default: false },
     rolePolicy: {
       adminRoleIds: { type: [String], default: DEFAULT_ROLE_POLICY.adminRoleIds },

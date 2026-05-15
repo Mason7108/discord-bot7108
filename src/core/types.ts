@@ -52,6 +52,7 @@ export interface GuildSettingsShape {
   staffRoleIds: string[];
   levelRoles: Array<{ level: number; roleId: string }>;
   economyEnabled: boolean;
+  gamblingEnabled: boolean;
   music247Enabled: boolean;
   rolePolicy: RolePolicy;
 }

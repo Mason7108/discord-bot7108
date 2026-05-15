@@ -43,6 +43,7 @@ const rawEnvSchema = z.object({
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
   DEFAULT_CURRENCY: z.string().default("coins"),
   AI_API_KEY: z.string().optional(),
+  BOT_OWNER_ID: z.string().optional(),
   VERIFY_CHANNEL_ID: z.string().optional(),
   WELCOME_CHANNEL_ID: z.string().optional(),
   MESSAGE_LOG_CHANNEL_ID: z.string().optional(),

@@ -18,9 +18,14 @@ const command: CommandDefinition = {
     ),
   module: "economy",
   cooldownSec: 4,
-  async execute({ interaction }) {
+  async execute({ interaction, settings }) {
     if (!interaction.guildId) {
       await replyError(interaction, "Unavailable", "Guild-only command.");
+      return;
+    }
+
+    if (!settings.gamblingEnabled) {
+      await replyError(interaction, "Gambling Disabled", "Gambling is currently disabled in this server.");
       return;
     }
 

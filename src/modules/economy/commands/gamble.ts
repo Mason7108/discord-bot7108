@@ -11,9 +11,14 @@ const command: CommandDefinition = {
     .addIntegerOption((option) => option.setName("amount").setDescription("Bet amount").setRequired(true).setMinValue(1)),
   module: "economy",
   cooldownSec: 5,
-  async execute({ interaction }) {
+  async execute({ interaction, settings }) {
     if (!interaction.guildId) {
       await replyError(interaction, "Unavailable", "Guild-only command.");
+      return;
+    }
+
+    if (!settings.gamblingEnabled) {
+      await replyError(interaction, "Gambling Disabled", "Gambling is currently disabled in this server.");
       return;
     }
 

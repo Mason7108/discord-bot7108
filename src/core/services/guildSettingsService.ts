@@ -24,7 +24,8 @@ export async function getGuildSettings(guildId: string): Promise<GuildSettingsSh
   if (existing) {
     return {
       ...existing,
-      modules: normalizeModules(existing.modules)
+      modules: normalizeModules(existing.modules),
+      gamblingEnabled: existing.gamblingEnabled ?? true
     };
   }
 
@@ -45,6 +46,7 @@ export async function getGuildSettings(guildId: string): Promise<GuildSettingsSh
     staffRoleIds: created.staffRoleIds,
     levelRoles: created.levelRoles,
     economyEnabled: created.economyEnabled,
+    gamblingEnabled: created.gamblingEnabled,
     music247Enabled: created.music247Enabled,
     rolePolicy: created.rolePolicy
   };
@@ -68,6 +70,7 @@ export async function updateGuildSettings(
 
   return {
     ...updated,
-    modules: normalizeModules(updated.modules)
+    modules: normalizeModules(updated.modules),
+    gamblingEnabled: updated.gamblingEnabled ?? true
   };
 }
