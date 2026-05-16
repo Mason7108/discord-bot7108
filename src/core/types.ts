@@ -63,6 +63,15 @@ export interface UserProfileShape {
   xp: number;
   level: number;
   coins: number;
+  bankSavings: number;
+  activeLoanBalance: number;
+  activeLoanOriginalAmount: number;
+  activeLoanTotalOwed: number;
+  loanInterestRate: number;
+  loanNextPaymentDueAt?: Date;
+  totalLoanPaidBack: number;
+  trustScore: number;
+  bankAccountCreatedAt: Date;
   inventory: string[];
   warnings: Array<{ moderatorId: string; reason: string; createdAt: Date }>;
   hasVerified: boolean;

@@ -18,9 +18,19 @@ const command: CommandDefinition = {
 
     const target = interaction.options.getUser("user") ?? interaction.user;
     const profile = await getOrCreateProfile(interaction.guildId, target.id);
+    const totalMoney = profile.coins + profile.bankSavings;
+    const nextPaymentText =
+      profile.activeLoanBalance > 0 && profile.loanNextPaymentDueAt
+        ? `<t:${Math.floor(profile.loanNextPaymentDueAt.getTime() / 1_000)}:R>`
+        : "No active loan";
 
     await interaction.reply({
-      embeds: [infoEmbed("Balance", `${target} has **${profile.coins}** coins.`)],
+      embeds: [
+        infoEmbed(
+          "7108 Bank Account Snapshot",
+          `${target}\n\nWallet: **${profile.coins}** coins\nVault Savings: **${profile.bankSavings}** coins\nTotal Money: **${totalMoney}** coins\nActive Loan: **${profile.activeLoanBalance}** coins\nNext Loan Payment: **${nextPaymentText}**\n\nWelcome to 7108 Bank. Your coins are safe... probably.`
+        )
+      ],
       ephemeral: false
     });
   }
