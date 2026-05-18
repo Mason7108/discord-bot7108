@@ -4,6 +4,8 @@ import { addCoins, getOrCreateProfile, removeCoins } from "../../../core/service
 import { randomInt } from "../../../utils/math.js";
 import { replyError, replySuccess } from "../../../utils/replies.js";
 
+const GAMBLING_CHANNEL_ID = "1505055957653127239";
+
 const command: CommandDefinition = {
   data: new SlashCommandBuilder()
     .setName("gamble")
@@ -14,6 +16,11 @@ const command: CommandDefinition = {
   async execute({ interaction, settings }) {
     if (!interaction.guildId) {
       await replyError(interaction, "Unavailable", "Guild-only command.");
+      return;
+    }
+
+    if (interaction.channelId !== GAMBLING_CHANNEL_ID) {
+      await replyError(interaction, "Wrong Channel", `The gamble command can only be used in <#${GAMBLING_CHANNEL_ID}>.");
       return;
     }
 
