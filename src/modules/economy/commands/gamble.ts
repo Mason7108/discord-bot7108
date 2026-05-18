@@ -20,7 +20,7 @@ const command: CommandDefinition = {
     }
 
     if (interaction.channelId !== GAMBLING_CHANNEL_ID) {
-      await replyError(interaction, "Wrong Channel", `The gamble command can only be used in <#${GAMBLING_CHANNEL_ID}>.");
+      await replyError(interaction, "Wrong Channel", `The gamble command can only be used in <#${GAMBLING_CHANNEL_ID}>.`);
       return;
     }
 
