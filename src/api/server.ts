@@ -61,7 +61,7 @@ export function startApiServer(env: Env, client: BotClient): Server | null {
     res.json({ ok: true, uptime: process.uptime(), timestamp: new Date().toISOString() });
   });
 
-  registerTermsAgreementRoutes(app, env);
+  registerTermsAgreementRoutes(app, env, client);
 
   app.get("/api/guilds/:guildId/settings", async (req, res) => {
     const settings = await getGuildSettings(req.params.guildId);

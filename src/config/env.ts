@@ -53,6 +53,7 @@ const rawEnvSchema = z.object({
   INVITE_LOG_CHANNEL_ID: z.string().optional(),
   LOG_CHANNEL_ID: z.string().optional(),
   AGREEMENT_CHANNEL_ID: z.string().default("1511227468873465856"),
+  AGREEMENT_LOG_CHANNEL_ID: z.string().default("1511432273797451796"),
   AGREEMENT_COOKIE_SECRET: z.string().optional(),
   BASE_URL: z.string().url("BASE_URL must be a valid URL").optional(),
   RECAPTCHA_SITE_KEY: z.string().optional(),

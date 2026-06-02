@@ -82,6 +82,7 @@ Verification (Railway/web) variables:
 - `RECAPTCHA_SECRET_KEY`
 - `LOG_CHANNEL_ID` (optional verification logs)
 - `AGREEMENT_CHANNEL_ID` (channel where the TOS/privacy agreement message is posted; defaults to `1511227468873465856`)
+- `AGREEMENT_LOG_CHANNEL_ID` (channel where successful TOS/privacy agreements are logged; defaults to `1511432273797451796`)
 - `VERIFY_TOKEN_TTL_SEC` (default `600`, must be `300-900`)
 - `VERIFY_BUTTON_COOLDOWN_SEC` (default `15`)
 
@@ -123,7 +124,8 @@ Token/port compatibility:
 3. Users can read the public Terms of Service and Privacy Policy without logging in.
 4. To submit agreement, users sign in with Discord OAuth2 using the `identify` scope.
 5. The agreement is stored in MongoDB with Discord user ID, server ID, accepted status, accepted timestamp, and terms version `2026-06-01`.
-6. Slash commands, autocomplete, buttons, modals, and leveling rewards are blocked until the current terms version is accepted.
+6. A log embed is posted to `AGREEMENT_LOG_CHANNEL_ID` when someone agrees.
+7. Slash commands, autocomplete, buttons, modals, and leveling rewards are blocked until the current terms version is accepted.
 
 Discord OAuth setup:
 

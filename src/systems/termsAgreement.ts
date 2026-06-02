@@ -8,7 +8,7 @@ import {
   type GuildTextBasedChannel,
   type Message
 } from "discord.js";
-import type { Express, Request, Response } from "express";
+import type { Express, Request } from "express";
 import crypto from "node:crypto";
 import type { Env } from "../config/env.js";
 import type { BotClient } from "../core/types.js";
@@ -359,6 +359,18 @@ const PRIVACY_SECTIONS: LegalSection[] = [
 
 function isGuildTextChannel(channel: GuildBasedChannel | null): channel is GuildTextBasedChannel {
   return Boolean(channel && channel.isTextBased() && "messages" in channel);
+}
+
+function isSendableTextChannel(channel: unknown): channel is { isTextBased: () => boolean; send: (payload: unknown) => Promise<unknown> } {
+  return Boolean(
+    channel &&
+      typeof channel === "object" &&
+      "isTextBased" in channel &&
+      typeof (channel as { isTextBased?: unknown }).isTextBased === "function" &&
+      (channel as { isTextBased: () => boolean }).isTextBased() &&
+      "send" in channel &&
+      typeof (channel as { send?: unknown }).send === "function"
+  );
 }
 
 function escapeHtml(value: string): string {
@@ -791,6 +803,35 @@ function agreementButtonRow(url: string): ActionRowBuilder<ButtonBuilder> {
   );
 }
 
+async function postTermsAgreementLog(input: {
+  client: BotClient;
+  env: Env;
+  guildId: string;
+  session: DiscordSession;
+}): Promise<void> {
+  const channel = await input.client.channels.fetch(input.env.AGREEMENT_LOG_CHANNEL_ID).catch(() => null);
+  if (!isSendableTextChannel(channel)) {
+    logger.warn({ channelId: input.env.AGREEMENT_LOG_CHANNEL_ID }, "Terms agreement log channel not found or not text-based");
+    return;
+  }
+
+  const displayName = input.session.globalName ?? input.session.username;
+  const embed = new EmbedBuilder()
+    .setColor(0x57f287)
+    .setTitle("Terms Agreement Accepted")
+    .addFields(
+      { name: "User", value: `<@${input.session.userId}>`, inline: true },
+      { name: "Username", value: displayName, inline: true },
+      { name: "User ID", value: input.session.userId, inline: true },
+      { name: "Server ID", value: input.guildId, inline: true },
+      { name: "Terms Version", value: TERMS_VERSION, inline: true },
+      { name: "Timestamp", value: `<t:${Math.floor(Date.now() / 1_000)}:F>` }
+    )
+    .setTimestamp();
+
+  await channel.send({ embeds: [embed] });
+}
+
 function isStoredAgreementMessage(message: Message, botUserId: string): boolean {
   if (message.author.id !== botUserId) {
     return false;
@@ -878,7 +919,7 @@ export async function ensureTermsAgreementMessage(client: BotClient, env: Env): 
   logger.info({ channelId: channel.id, messageId: sent.id }, "Created terms agreement message");
 }
 
-export function registerTermsAgreementRoutes(app: Express, env: Env): void {
+export function registerTermsAgreementRoutes(app: Express, env: Env, client: BotClient): void {
   app.get(["/terms", "/privacy", "/tos"], (req, res) => {
     const session = getSession(req, env);
     const guildId = resolveGuildIdFromRequest(req, env);
@@ -1016,6 +1057,10 @@ export function registerTermsAgreementRoutes(app: Express, env: Env): void {
 
     try {
       await recordTermsAgreement({ guildId, userId: session.userId });
+      await postTermsAgreementLog({ client, env, guildId, session }).catch((error) => {
+        logger.error({ err: error, guildId, userId: session.userId }, "Failed to post terms agreement log");
+      });
+
       res
         .status(200)
         .type("html")
