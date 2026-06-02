@@ -13,8 +13,10 @@ import crypto from "node:crypto";
 import type { Env } from "../config/env.js";
 import type { BotClient } from "../core/types.js";
 import {
+  getAcceptedTermsAgreement,
   isDiscordId,
   recordTermsAgreement,
+  type AcceptedTermsAgreement,
   TERMS_CONTACT_EMAIL,
   TERMS_COPYRIGHT_NOTICE,
   TERMS_REQUIRED_MESSAGE,
@@ -727,12 +729,33 @@ function renderShell(title: string, body: string): string {
 </html>`;
 }
 
-function renderLegalPage(input: { env: Env; req: Request; session: DiscordSession | null; guildId?: string }): string {
+function formatAgreementDate(date: Date): string {
+  return new Intl.DateTimeFormat("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "America/Chicago"
+  }).format(date);
+}
+
+function renderLegalPage(input: {
+  env: Env;
+  req: Request;
+  session: DiscordSession | null;
+  guildId?: string;
+  acceptedAgreement?: AcceptedTermsAgreement | null;
+}): string {
   const returnTo = sanitizeReturnTo(input.req.originalUrl || "/terms");
   const loginUrl = `/auth/discord?returnTo=${encodeURIComponent(returnTo)}`;
   const displayName = input.session?.globalName ?? input.session?.username;
+  const agreementPrompt = input.acceptedAgreement
+    ? "You have already agreed to the current bot7108 Terms of Service and Privacy Policy. You can still review them on this page."
+    : "By clicking submit, you agree to the bot7108 Terms of Service and Privacy Policy.";
   const agreementControls =
-    input.session && input.guildId
+    input.session && input.guildId && input.acceptedAgreement
+      ? `<p class="session">Signed in as ${escapeHtml(displayName ?? "Discord user")} (${escapeHtml(input.session.userId)}).</p>
+        <p class="success">Accepted version ${escapeHtml(input.acceptedAgreement.termsVersion)} on ${escapeHtml(formatAgreementDate(input.acceptedAgreement.acceptedAt))}.</p>
+        <a class="button" href="#terms-of-service">Review Terms and Privacy Policy</a>`
+      : input.session && input.guildId
       ? `<p class="session">Signed in as ${escapeHtml(displayName ?? "Discord user")} (${escapeHtml(input.session.userId)}).</p>
         <form method="POST" action="/terms/agree">
           <input type="hidden" name="guildId" value="${escapeHtml(input.guildId)}" />
@@ -769,7 +792,7 @@ function renderLegalPage(input: { env: Env; req: Request; session: DiscordSessio
 
     <section id="agreement" class="agreement">
       <h2>Agreement</h2>
-      <p>By clicking submit, you agree to the bot7108 Terms of Service and Privacy Policy.</p>
+      <p>${escapeHtml(agreementPrompt)}</p>
       <p class="notice">${escapeHtml(TERMS_COPYRIGHT_NOTICE)}</p>
       ${agreementControls}
     </section>`
@@ -808,6 +831,7 @@ async function postTermsAgreementLog(input: {
   env: Env;
   guildId: string;
   session: DiscordSession;
+  acceptedAt: Date;
 }): Promise<void> {
   const channel = await input.client.channels.fetch(input.env.AGREEMENT_LOG_CHANNEL_ID).catch(() => null);
   if (!isSendableTextChannel(channel)) {
@@ -825,7 +849,7 @@ async function postTermsAgreementLog(input: {
       { name: "User ID", value: input.session.userId, inline: true },
       { name: "Server ID", value: input.guildId, inline: true },
       { name: "Terms Version", value: TERMS_VERSION, inline: true },
-      { name: "Timestamp", value: `<t:${Math.floor(Date.now() / 1_000)}:F>` }
+      { name: "Timestamp", value: `<t:${Math.floor(input.acceptedAt.getTime() / 1_000)}:F>` }
     )
     .setTimestamp();
 
@@ -920,10 +944,18 @@ export async function ensureTermsAgreementMessage(client: BotClient, env: Env): 
 }
 
 export function registerTermsAgreementRoutes(app: Express, env: Env, client: BotClient): void {
-  app.get(["/terms", "/privacy", "/tos"], (req, res) => {
+  app.get(["/terms", "/privacy", "/tos"], async (req, res) => {
     const session = getSession(req, env);
     const guildId = resolveGuildIdFromRequest(req, env);
-    res.status(200).type("html").send(renderLegalPage({ env, req, session, guildId }));
+    const acceptedAgreement =
+      session && guildId
+        ? await getAcceptedTermsAgreement(guildId, session.userId).catch((error) => {
+            logger.error({ err: error, guildId, userId: session.userId }, "Failed to check accepted terms on legal page");
+            return null;
+          })
+        : null;
+
+    res.status(200).type("html").send(renderLegalPage({ env, req, session, guildId, acceptedAgreement }));
   });
 
   app.get("/auth/discord", (req, res) => {
@@ -1056,8 +1088,19 @@ export function registerTermsAgreementRoutes(app: Express, env: Env, client: Bot
     }
 
     try {
-      await recordTermsAgreement({ guildId, userId: session.userId });
-      await postTermsAgreementLog({ client, env, guildId, session }).catch((error) => {
+      const agreement = await recordTermsAgreement({ guildId, userId: session.userId });
+      if (!agreement.created) {
+        res
+          .status(200)
+          .type("html")
+          .send(renderStatusPage(
+            "Already Agreed",
+            `You already agreed to the current bot7108 Terms of Service and Privacy Policy on ${formatAgreementDate(agreement.acceptedAt)}. You can still review the Terms and Privacy Policy page.`
+          ));
+        return;
+      }
+
+      await postTermsAgreementLog({ client, env, guildId, session, acceptedAt: agreement.acceptedAt }).catch((error) => {
         logger.error({ err: error, guildId, userId: session.userId }, "Failed to post terms agreement log");
       });
 

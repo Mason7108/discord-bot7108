@@ -14,9 +14,18 @@ export function isDiscordId(value: string | undefined): value is string {
   return typeof value === "string" && DISCORD_ID_PATTERN.test(value);
 }
 
-export async function hasAcceptedTerms(guildId: string, userId: string): Promise<boolean> {
+export interface AcceptedTermsAgreement {
+  acceptedAt: Date;
+  termsVersion: string;
+}
+
+function isDuplicateKeyError(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === 11000;
+}
+
+export async function getAcceptedTermsAgreement(guildId: string, userId: string): Promise<AcceptedTermsAgreement | null> {
   if (!isDiscordId(guildId) || !isDiscordId(userId)) {
-    return false;
+    return null;
   }
 
   const agreement = await TermsAgreementModel.findOne({
@@ -24,33 +33,64 @@ export async function hasAcceptedTerms(guildId: string, userId: string): Promise
     userId,
     accepted: true,
     termsVersion: TERMS_VERSION
-  }).lean<{ accepted?: boolean } | null>();
+  }).lean<{ acceptedAt?: Date; termsVersion?: string } | null>();
 
-  return agreement?.accepted === true;
+  if (!agreement?.acceptedAt || !agreement.termsVersion) {
+    return null;
+  }
+
+  return {
+    acceptedAt: agreement.acceptedAt,
+    termsVersion: agreement.termsVersion
+  };
 }
 
-export async function recordTermsAgreement(input: { guildId: string; userId: string }): Promise<void> {
+export async function hasAcceptedTerms(guildId: string, userId: string): Promise<boolean> {
+  return (await getAcceptedTermsAgreement(guildId, userId)) !== null;
+}
+
+export async function recordTermsAgreement(input: { guildId: string; userId: string }): Promise<{ created: boolean; acceptedAt: Date }> {
   if (!isDiscordId(input.guildId) || !isDiscordId(input.userId)) {
     throw new Error("Invalid Discord user or guild ID.");
   }
 
-  await TermsAgreementModel.findOneAndUpdate(
-    {
+  const existing = await getAcceptedTermsAgreement(input.guildId, input.userId);
+  if (existing) {
+    return { created: false, acceptedAt: existing.acceptedAt };
+  }
+
+  const acceptedAt = new Date();
+  const existingRecord = await TermsAgreementModel.findOne({
+    guildId: input.guildId,
+    userId: input.userId,
+    termsVersion: TERMS_VERSION
+  });
+
+  if (existingRecord) {
+    existingRecord.accepted = true;
+    existingRecord.acceptedAt = acceptedAt;
+    await existingRecord.save();
+    return { created: true, acceptedAt };
+  }
+
+  try {
+    await TermsAgreementModel.create({
       guildId: input.guildId,
       userId: input.userId,
+      accepted: true,
+      acceptedAt,
       termsVersion: TERMS_VERSION
-    },
-    {
-      $setOnInsert: {
-        guildId: input.guildId,
-        userId: input.userId,
-        termsVersion: TERMS_VERSION
-      },
-      $set: {
-        accepted: true,
-        acceptedAt: new Date()
+    });
+  } catch (error) {
+    if (isDuplicateKeyError(error)) {
+      const duplicate = await getAcceptedTermsAgreement(input.guildId, input.userId);
+      if (duplicate) {
+        return { created: false, acceptedAt: duplicate.acceptedAt };
       }
-    },
-    { upsert: true }
-  );
+    }
+
+    throw error;
+  }
+
+  return { created: true, acceptedAt };
 }
