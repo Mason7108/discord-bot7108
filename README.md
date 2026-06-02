@@ -14,6 +14,7 @@ A greenfield TypeScript Discord bot built with `discord.js v14`, `mongoose`, `ex
 - Utility + fun commands
 - Express dashboard API scaffold (`/health`, settings GET/PATCH)
 - Button-based CAPTCHA verification flow (`/verify` web page + Discord button)
+- Terms of Service and Privacy Policy agreement flow (`/terms`, `/privacy` + Discord OAuth submit)
 - Welcome embed system for new members
 - Message logging for deletes/edits (with jump-to-message button on edits)
 
@@ -64,6 +65,8 @@ Optional:
 - `DEV_GUILD_ID` (guild-scoped slash sync in development)
 - `API_PORT`
 - `AI_API_KEY`
+- `DISCORD_OAUTH_CLIENT_SECRET` (required for the terms agreement submit flow)
+- `AGREEMENT_COOKIE_SECRET` (required for signed agreement/OAuth cookies)
 
 Verification (Railway/web) variables:
 
@@ -78,6 +81,7 @@ Verification (Railway/web) variables:
 - `RECAPTCHA_SITE_KEY`
 - `RECAPTCHA_SECRET_KEY`
 - `LOG_CHANNEL_ID` (optional verification logs)
+- `AGREEMENT_CHANNEL_ID` (channel where the TOS/privacy agreement message is posted; defaults to `1511227468873465856`)
 - `VERIFY_TOKEN_TTL_SEC` (default `600`, must be `300-900`)
 - `VERIFY_BUTTON_COOLDOWN_SEC` (default `15`)
 
@@ -111,6 +115,28 @@ Token/port compatibility:
    - `Verified` role is assigned
    - `Unverified` role is removed (if present)
    - verification log is posted to `LOG_CHANNEL_ID` (if configured)
+
+## Terms and Privacy Agreement Flow
+
+1. On startup, the bot checks `AGREEMENT_CHANNEL_ID` and creates or updates the bot7108 agreement message.
+2. The message button opens `/terms?guildId=<server-id>` on `BASE_URL`.
+3. Users can read the public Terms of Service and Privacy Policy without logging in.
+4. To submit agreement, users sign in with Discord OAuth2 using the `identify` scope.
+5. The agreement is stored in MongoDB with Discord user ID, server ID, accepted status, accepted timestamp, and terms version `2026-06-01`.
+6. Slash commands, autocomplete, buttons, modals, and leveling rewards are blocked until the current terms version is accepted.
+
+Discord OAuth setup:
+
+1. In the Discord Developer Portal, add this redirect URL to the bot application:
+
+```text
+https://your-app.up.railway.app/auth/discord/callback
+```
+
+2. Copy the OAuth2 client secret into Railway:
+   - `DISCORD_OAUTH_CLIENT_SECRET`
+3. Set a strong random cookie signing secret in Railway:
+   - `AGREEMENT_COOKIE_SECRET`
 
 ## Google reCAPTCHA Setup (v2 Checkbox)
 

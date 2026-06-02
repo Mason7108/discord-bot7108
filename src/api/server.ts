@@ -4,6 +4,7 @@ import type { Env } from "../config/env.js";
 import type { BotClient } from "../core/types.js";
 import { getGuildSettings, updateGuildSettings } from "../core/services/guildSettingsService.js";
 import { MODULE_NAMES } from "../core/constants.js";
+import { registerTermsAgreementRoutes } from "../systems/termsAgreement.js";
 import { buildVerifyPage, completeVerification } from "../systems/verification.js";
 import { logger } from "../utils/logger.js";
 
@@ -59,6 +60,8 @@ export function startApiServer(env: Env, client: BotClient): Server | null {
   app.get("/health", (_req, res) => {
     res.json({ ok: true, uptime: process.uptime(), timestamp: new Date().toISOString() });
   });
+
+  registerTermsAgreementRoutes(app, env);
 
   app.get("/api/guilds/:guildId/settings", async (req, res) => {
     const settings = await getGuildSettings(req.params.guildId);

@@ -2,6 +2,7 @@ import { loadEnv } from "../config/env.js";
 import type { EventDefinition } from "../core/types.js";
 import { ensureInviteGeneratorMessage } from "../systems/inviteGenerator.js";
 import { primeInviteCaches } from "../systems/inviteLogs.js";
+import { ensureTermsAgreementMessage } from "../systems/termsAgreement.js";
 import { ensureVerificationMessage } from "../systems/verification.js";
 import { logger } from "../utils/logger.js";
 
@@ -18,6 +19,10 @@ const event: EventDefinition = {
 
     await ensureInviteGeneratorMessage(client, env).catch((error) => {
       logger.error({ err: error }, "Failed to ensure invite generator message");
+    });
+
+    await ensureTermsAgreementMessage(client, env).catch((error) => {
+      logger.error({ err: error }, "Failed to ensure terms agreement message");
     });
 
     await primeInviteCaches(client).catch((error) => {
