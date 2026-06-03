@@ -29,9 +29,10 @@ function formatYtDlpError(error: unknown): string {
 
 function ytDlpFlags(cookieFilePath: string | undefined, extra: Record<string, unknown> = {}) {
   return {
+    ignoreConfig: true,
     dumpSingleJson: true,
     noWarnings: true,
-    preferFreeFormats: true,
+    format: "bestaudio/best",
     skipDownload: true,
     simulate: true,
     ...(cookieFilePath ? { cookies: cookieFilePath } : {}),
