@@ -19,7 +19,7 @@ export const DEFAULT_MODULE_STATE: Record<ModuleName, boolean> = {
   utility: true,
   economy: true,
   leveling: true,
-  music: false,
+  music: true,
   tickets: true,
   giveaways: true,
   fun: true,

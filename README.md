@@ -158,7 +158,7 @@ https://your-app.up.railway.app/auth/discord/callback
 
 ## Notes
 
-- Music module defaults to disabled for new guilds; enable with `/modules enable module:music`.
+- Music commands are enabled by default for new guilds. For existing guild records where music was previously disabled, enable with `/modules enable module:music`.
 - `askai` is scaffolded and intentionally guarded behind `AI_API_KEY`.
 - Dashboard auth/OAuth is scaffold-only and must be hardened before production.
 - Ticket history channel can be configured with `/config tickethistory channel:#your-channel`.
