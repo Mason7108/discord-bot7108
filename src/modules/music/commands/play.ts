@@ -1,5 +1,4 @@
 import { SlashCommandBuilder, type GuildTextBasedChannel } from "discord.js";
-import { SearchResultType, YouTubePlugin } from "@distube/youtube";
 import type { DisTube, Playlist, Song } from "distube";
 import type { CommandDefinition } from "../../../core/types.js";
 import { CookieAwareYtDlpPlugin } from "../../../core/music/cookieAwareYtDlpPlugin.js";
@@ -55,10 +54,6 @@ function isYouTubeUrl(input: string): boolean {
   }
 }
 
-function getYouTubePlugin(distube: DisTube): YouTubePlugin | undefined {
-  return distube.plugins.find((plugin): plugin is YouTubePlugin => plugin instanceof YouTubePlugin);
-}
-
 function getYtDlpPlugin(distube: DisTube): CookieAwareYtDlpPlugin | undefined {
   return distube.plugins.find((plugin): plugin is CookieAwareYtDlpPlugin => plugin instanceof CookieAwareYtDlpPlugin);
 }
@@ -81,22 +76,7 @@ async function resolveYtDlpInput(
     return query;
   }
 
-  const youtubePlugin = getYouTubePlugin(distube);
-  if (!youtubePlugin) {
-    return query;
-  }
-
-  const [result] = await youtubePlugin.search(query, {
-    type: SearchResultType.VIDEO,
-    limit: 1,
-    safeSearch: false
-  });
-
-  if (!result?.url) {
-    return query;
-  }
-
-  return ytDlpPlugin.resolve(result.url, resolveOptions);
+  return ytDlpPlugin.resolveSearch(query, resolveOptions);
 }
 
 function formatPlaybackError(error: unknown): string {

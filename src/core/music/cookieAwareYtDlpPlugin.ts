@@ -104,10 +104,15 @@ function bestAudioStreamUrl(formats: unknown): string | undefined {
 
 function getPlayableStreamUrl(info: YtDlpInfo): string | undefined {
   return (
+    bestAudioStreamUrl(info.requested_downloads) ??
     bestAudioStreamUrl(info.requested_formats) ??
     (hasStreamUrl(info) && hasAudio(info) ? info.url : undefined) ??
     bestAudioStreamUrl(info.formats)
   );
+}
+
+function toYtSearchQuery(query: string, limit: number): string {
+  return `ytsearch${limit}:${query}`;
 }
 
 function getYtDlpAssetName(): string {
@@ -253,6 +258,11 @@ class CookieAwareYtDlpSong<T = unknown> extends Song<T> {
       },
       options
     );
+
+    const streamUrl = getPlayableStreamUrl(info);
+    if (streamUrl && this.stream.playFromSource) {
+      this.stream.url = streamUrl;
+    }
   }
 }
 
@@ -287,7 +297,9 @@ export class CookieAwareYtDlpPlugin extends PlayableExtractorPlugin {
       return new Playlist(
         {
           source: String(info.extractor ?? "yt-dlp"),
-          songs: info.entries.map((entry: YtDlpInfo) => new CookieAwareYtDlpSong(this, entry, options)),
+          songs: info.entries
+            .filter((entry: unknown): entry is YtDlpInfo => typeof entry === "object" && entry !== null)
+            .map((entry: YtDlpInfo) => new CookieAwareYtDlpSong(this, entry, options)),
           id: String(info.id ?? info.webpage_url ?? url),
           name: info.title,
           url: info.webpage_url || url,
@@ -298,6 +310,33 @@ export class CookieAwareYtDlpPlugin extends PlayableExtractorPlugin {
     }
 
     return new CookieAwareYtDlpSong(this, info, options);
+  }
+
+  async resolveSearch<T>(query: string, options: ResolveOptions<T>): Promise<Song<T>> {
+    const info = await ytDlpJson(
+      toYtSearchQuery(query, 5),
+      ytDlpFlags(this.cookieFilePath, {
+        ignoreErrors: true,
+        playlistEnd: 5
+      })
+    ).catch((error: unknown) => {
+      throw new DisTubeError("YTDLP_ERROR", formatYtDlpError(error));
+    });
+
+    if (!isPlaylist(info)) {
+      return new CookieAwareYtDlpSong(this, info, options);
+    }
+
+    const entries = Array.isArray(info.entries)
+      ? info.entries.filter((entry: unknown): entry is YtDlpInfo => typeof entry === "object" && entry !== null)
+      : [];
+    const playableEntry = entries.find((entry) => getPlayableStreamUrl(entry) || typeof entry.webpage_url === "string");
+
+    if (!playableEntry) {
+      throw new DisTubeError("YTDLP_ERROR", "No playable YouTube search results were found.");
+    }
+
+    return new CookieAwareYtDlpSong(this, playableEntry, options);
   }
 
   async getStreamURL(song: Song): Promise<string> {
