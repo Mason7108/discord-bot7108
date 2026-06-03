@@ -24,7 +24,6 @@ function ytDlpFlags(cookieFilePath: string | undefined, extra: Record<string, un
   return {
     dumpSingleJson: true,
     noWarnings: true,
-    noCallHome: true,
     preferFreeFormats: true,
     skipDownload: true,
     simulate: true,
