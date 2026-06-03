@@ -1,5 +1,10 @@
 import { DisTubeError, PlayableExtractorPlugin, Playlist, Song, type DisTube, type ResolveOptions } from "distube";
-import { json } from "@distube/yt-dlp";
+import { spawn } from "node:child_process";
+import { createWriteStream } from "node:fs";
+import { access, chmod, rename, unlink } from "node:fs/promises";
+import https from "node:https";
+import os from "node:os";
+import path from "node:path";
 
 type YtDlpInfo = Record<string, any>;
 
@@ -26,6 +31,148 @@ function ytDlpFlags(cookieFilePath: string | undefined, extra: Record<string, un
     ...(cookieFilePath ? { cookies: cookieFilePath } : {}),
     ...extra
   };
+}
+
+function toKebabCase(input: string): string {
+  return input.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
+}
+
+function toYtDlpArgs(url: string, flags: Record<string, unknown>): string[] {
+  const args: string[] = [];
+
+  for (const [key, value] of Object.entries(flags)) {
+    if (value === undefined || value === null || value === false) {
+      continue;
+    }
+
+    const flag = `--${toKebabCase(key)}`;
+    if (value === true) {
+      args.push(flag);
+      continue;
+    }
+
+    args.push(flag, String(value));
+  }
+
+  return [...args, url];
+}
+
+function getYtDlpAssetName(): string {
+  if (process.platform === "win32") {
+    return "yt-dlp.exe";
+  }
+
+  if (process.platform === "linux" && process.arch === "arm64") {
+    return "yt-dlp_linux_aarch64";
+  }
+
+  if (process.platform === "linux") {
+    return "yt-dlp_linux";
+  }
+
+  return "yt-dlp";
+}
+
+function getYtDlpBinaryPath(): string {
+  return path.join(os.tmpdir(), process.platform === "win32" ? "bot7108-yt-dlp.exe" : "bot7108-yt-dlp");
+}
+
+async function fileExists(filePath: string): Promise<boolean> {
+  try {
+    await access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function downloadFile(url: string, targetPath: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const request = https.get(url, (response) => {
+      const statusCode = response.statusCode ?? 0;
+
+      if (statusCode >= 300 && statusCode < 400 && response.headers.location) {
+        response.resume();
+        downloadFile(response.headers.location, targetPath).then(resolve, reject);
+        return;
+      }
+
+      if (statusCode < 200 || statusCode >= 300) {
+        response.resume();
+        reject(new Error(`Failed to download yt-dlp standalone binary: HTTP ${statusCode}`));
+        return;
+      }
+
+      const output = createWriteStream(targetPath, { mode: 0o755 });
+      response.pipe(output);
+      output.on("finish", () => {
+        output.close((error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+
+          resolve();
+        });
+      });
+      output.on("error", reject);
+    });
+
+    request.on("error", reject);
+  });
+}
+
+async function ensureStandaloneYtDlp(): Promise<string> {
+  const binaryPath = getYtDlpBinaryPath();
+  if (await fileExists(binaryPath)) {
+    return binaryPath;
+  }
+
+  const assetName = getYtDlpAssetName();
+  const downloadUrl = `https://github.com/yt-dlp/yt-dlp/releases/latest/download/${assetName}`;
+  const partialPath = `${binaryPath}.download`;
+
+  await unlink(partialPath).catch(() => undefined);
+  await downloadFile(downloadUrl, partialPath);
+  if (process.platform !== "win32") {
+    await chmod(partialPath, 0o755);
+  }
+  await rename(partialPath, binaryPath);
+
+  return binaryPath;
+}
+
+async function ytDlpJson(url: string, flags: Record<string, unknown>): Promise<YtDlpInfo> {
+  const binaryPath = await ensureStandaloneYtDlp();
+  const args = toYtDlpArgs(url, flags);
+
+  return new Promise((resolve, reject) => {
+    const process = spawn(binaryPath, args, { windowsHide: true });
+    let stdout = "";
+    let stderr = "";
+
+    process.stdout?.on("data", (chunk) => {
+      stdout += chunk;
+    });
+
+    process.stderr?.on("data", (chunk) => {
+      stderr += chunk;
+    });
+
+    process.on("error", reject);
+    process.on("close", (code) => {
+      if (code !== 0) {
+        reject(new Error((stderr || stdout || `yt-dlp exited with code ${code}`).trim()));
+        return;
+      }
+
+      try {
+        resolve(JSON.parse(stdout) as YtDlpInfo);
+      } catch (error) {
+        reject(error);
+      }
+    });
+  });
 }
 
 class CookieAwareYtDlpSong<T = unknown> extends Song<T> {
@@ -75,9 +222,9 @@ export class CookieAwareYtDlpPlugin extends PlayableExtractorPlugin {
   }
 
   async resolve<T>(url: string, options: ResolveOptions<T>): Promise<Song<T> | Playlist<T>> {
-    const info = (await json(url, ytDlpFlags(this.cookieFilePath)).catch((error: unknown) => {
+    const info = await ytDlpJson(url, ytDlpFlags(this.cookieFilePath)).catch((error: unknown) => {
       throw new DisTubeError("YTDLP_ERROR", formatYtDlpError(error));
-    })) as unknown as YtDlpInfo;
+    });
 
     if (isPlaylist(info)) {
       if (!Array.isArray(info.entries) || info.entries.length === 0) {
@@ -105,9 +252,9 @@ export class CookieAwareYtDlpPlugin extends PlayableExtractorPlugin {
       throw new DisTubeError("YTDLP_PLUGIN_INVALID_SONG", "Cannot get stream URL from an invalid song.");
     }
 
-    const info = (await json(song.url, ytDlpFlags(this.cookieFilePath, { format: "ba/ba*" })).catch((error: unknown) => {
+    const info = await ytDlpJson(song.url, ytDlpFlags(this.cookieFilePath, { format: "ba/ba*" })).catch((error: unknown) => {
       throw new DisTubeError("YTDLP_ERROR", formatYtDlpError(error));
-    })) as unknown as YtDlpInfo;
+    });
 
     if (isPlaylist(info)) {
       throw new DisTubeError("YTDLP_ERROR", "Cannot get stream URL for an entire playlist.");
