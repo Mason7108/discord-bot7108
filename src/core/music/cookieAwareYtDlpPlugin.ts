@@ -27,17 +27,40 @@ function formatYtDlpError(error: unknown): string {
   return String(error);
 }
 
-function ytDlpFlags(cookieFilePath: string | undefined, extra: Record<string, unknown> = {}) {
+function ytDlpBaseFlags(cookieFilePath: string | undefined, extra: Record<string, unknown> = {}) {
   return {
     ignoreConfig: true,
     dumpSingleJson: true,
     noWarnings: true,
-    format: "bestaudio/best",
     skipDownload: true,
     simulate: true,
     ...(cookieFilePath ? { cookies: cookieFilePath } : {}),
     ...extra
   };
+}
+
+function ytDlpStreamFlags(cookieFilePath: string | undefined, extra: Record<string, unknown> = {}) {
+  return ytDlpBaseFlags(cookieFilePath, {
+    format: "bestaudio/best",
+    ...extra
+  });
+}
+
+function ytDlpSearchFlags(cookieFilePath: string | undefined, extra: Record<string, unknown> = {}) {
+  return ytDlpBaseFlags(cookieFilePath, {
+    flatPlaylist: true,
+    ignoreErrors: true,
+    playlistEnd: 10,
+    ...extra
+  });
+}
+
+function ytDlpStreamFlagSets(cookieFilePath: string | undefined): Record<string, unknown>[] {
+  return [
+    ytDlpStreamFlags(cookieFilePath),
+    ytDlpStreamFlags(cookieFilePath, { ignoreNoFormatsError: true }),
+    ytDlpBaseFlags(cookieFilePath, { ignoreNoFormatsError: true })
+  ];
 }
 
 function toKebabCase(input: string): string {
@@ -113,6 +136,29 @@ function getPlayableStreamUrl(info: YtDlpInfo): string | undefined {
 
 function toYtSearchQuery(query: string, limit: number): string {
   return `ytsearch${limit}:${query}`;
+}
+
+function isYouTubeId(input: string): boolean {
+  return /^[\w-]{11}$/.test(input);
+}
+
+function getSearchCandidateUrl(entry: YtDlpInfo): string | undefined {
+  const webpageUrl = typeof entry.webpage_url === "string" ? entry.webpage_url : undefined;
+  if (webpageUrl?.startsWith("http://") || webpageUrl?.startsWith("https://")) {
+    return webpageUrl;
+  }
+
+  const url = typeof entry.url === "string" ? entry.url : undefined;
+  if (url?.startsWith("http://") || url?.startsWith("https://")) {
+    return url;
+  }
+
+  const id = typeof entry.id === "string" ? entry.id : url;
+  if (typeof id === "string" && isYouTubeId(id)) {
+    return `https://www.youtube.com/watch?v=${id}`;
+  }
+
+  return undefined;
 }
 
 function getYtDlpAssetName(): string {
@@ -233,6 +279,25 @@ async function ytDlpJson(url: string, flags: Record<string, unknown>): Promise<Y
   });
 }
 
+async function ytDlpPlayableInfo(url: string, cookieFilePath: string | undefined): Promise<YtDlpInfo> {
+  const errors: string[] = [];
+
+  for (const flags of ytDlpStreamFlagSets(cookieFilePath)) {
+    try {
+      const info = await ytDlpJson(url, flags);
+      if (isPlaylist(info) || getPlayableStreamUrl(info)) {
+        return info;
+      }
+
+      errors.push("yt-dlp returned metadata without playable audio formats.");
+    } catch (error) {
+      errors.push(formatYtDlpError(error));
+    }
+  }
+
+  throw new Error(errors.slice(0, 3).join(" | ") || "yt-dlp did not return playable metadata.");
+}
+
 class CookieAwareYtDlpSong<T = unknown> extends Song<T> {
   constructor(plugin: CookieAwareYtDlpPlugin, info: YtDlpInfo, options: ResolveOptions<T> = {}) {
     super(
@@ -285,7 +350,7 @@ export class CookieAwareYtDlpPlugin extends PlayableExtractorPlugin {
   }
 
   async resolve<T>(url: string, options: ResolveOptions<T>): Promise<Song<T> | Playlist<T>> {
-    const info = await ytDlpJson(url, ytDlpFlags(this.cookieFilePath)).catch((error: unknown) => {
+    const info = await ytDlpPlayableInfo(url, this.cookieFilePath).catch((error: unknown) => {
       throw new DisTubeError("YTDLP_ERROR", formatYtDlpError(error));
     });
 
@@ -314,11 +379,8 @@ export class CookieAwareYtDlpPlugin extends PlayableExtractorPlugin {
 
   async resolveSearch<T>(query: string, options: ResolveOptions<T>): Promise<Song<T>> {
     const info = await ytDlpJson(
-      toYtSearchQuery(query, 5),
-      ytDlpFlags(this.cookieFilePath, {
-        ignoreErrors: true,
-        playlistEnd: 5
-      })
+      toYtSearchQuery(query, 10),
+      ytDlpSearchFlags(this.cookieFilePath)
     ).catch((error: unknown) => {
       throw new DisTubeError("YTDLP_ERROR", formatYtDlpError(error));
     });
@@ -330,13 +392,26 @@ export class CookieAwareYtDlpPlugin extends PlayableExtractorPlugin {
     const entries = Array.isArray(info.entries)
       ? info.entries.filter((entry: unknown): entry is YtDlpInfo => typeof entry === "object" && entry !== null)
       : [];
-    const playableEntry = entries.find((entry) => getPlayableStreamUrl(entry) || typeof entry.webpage_url === "string");
+    const errors: string[] = [];
 
-    if (!playableEntry) {
-      throw new DisTubeError("YTDLP_ERROR", "No playable YouTube search results were found.");
+    for (const entry of entries) {
+      const candidateUrl = getSearchCandidateUrl(entry);
+      if (!candidateUrl) {
+        continue;
+      }
+
+      try {
+        const resolved = await this.resolve(candidateUrl, options);
+        if (resolved instanceof Song) {
+          return resolved;
+        }
+      } catch (error) {
+        errors.push(formatYtDlpError(error));
+      }
     }
 
-    return new CookieAwareYtDlpSong(this, playableEntry, options);
+    const reason = errors.length > 0 ? ` ${errors.slice(0, 3).join(" | ")}` : "";
+    throw new DisTubeError("YTDLP_ERROR", `No playable YouTube search results were found.${reason}`);
   }
 
   async getStreamURL(song: Song): Promise<string> {
@@ -344,7 +419,7 @@ export class CookieAwareYtDlpPlugin extends PlayableExtractorPlugin {
       throw new DisTubeError("YTDLP_PLUGIN_INVALID_SONG", "Cannot get stream URL from an invalid song.");
     }
 
-    const info = await ytDlpJson(song.url, ytDlpFlags(this.cookieFilePath)).catch((error: unknown) => {
+    const info = await ytDlpPlayableInfo(song.url, this.cookieFilePath).catch((error: unknown) => {
       throw new DisTubeError("YTDLP_ERROR", formatYtDlpError(error));
     });
 
