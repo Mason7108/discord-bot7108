@@ -2,7 +2,10 @@
 nixPkgs = ["nodejs_22", "python3"]
 
 [phases.install]
-cmds = ["npm install"]
+cmds = [
+  "npm install",
+  "YTDLP_URL=https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux node node_modules/@distube/yt-dlp/script/download.js"
+]
 
 [phases.build]
 cmds = ["npm run build"]
