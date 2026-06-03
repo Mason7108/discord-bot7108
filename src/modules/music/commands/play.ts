@@ -2,8 +2,8 @@ import { SlashCommandBuilder, type GuildTextBasedChannel } from "discord.js";
 import type { DisTube, Playlist, Song } from "distube";
 import type { CommandDefinition } from "../../../core/types.js";
 import { CookieAwareYtDlpPlugin } from "../../../core/music/cookieAwareYtDlpPlugin.js";
-import { ensureDisTube, ensureSameVoiceAsBot, getMissingBotPlaybackPermissions } from "./shared.js";
-import { errorEmbed, successEmbed } from "../../../utils/embeds.js";
+import { ensureDisTube, ensureSameVoiceAsBot, getBotVoiceChannel, getMissingBotPlaybackPermissions } from "./shared.js";
+import { errorEmbed, infoEmbed, successEmbed } from "../../../utils/embeds.js";
 import { replyError, replySuccess } from "../../../utils/replies.js";
 
 type PlayInput = string | Song | Playlist;
@@ -143,17 +143,31 @@ const command: CommandDefinition = {
       await interaction.deferReply();
     }
 
+    await interaction.editReply({
+      embeds: [infoEmbed("Joining Voice", `Joining ${voiceCheck.voiceChannel.toString()} and searching for: **${normalizedQuery}**`)]
+    });
+
     let playableInput: PlayInput = normalizedQuery;
+    const botVoiceBeforeJoin = getBotVoiceChannel(interaction);
 
     try {
+      await distube.voices.join(voiceCheck.voiceChannel);
       playableInput = await resolveYtDlpInput(distube, normalizedQuery, resolveOptions);
       await distube.play(voiceCheck.voiceChannel, playableInput, playOptions);
     } catch (error) {
+      if (!botVoiceBeforeJoin && interaction.guildId) {
+        distube.voices.leave(interaction.guildId);
+      }
+
       if (isVoiceConnectionTimeout(error) && interaction.guildId) {
         // Retry once after forcing a clean voice reconnect.
         try {
           distube.voices.leave(interaction.guildId);
           await new Promise((resolve) => setTimeout(resolve, 1_000));
+          await distube.voices.join(voiceCheck.voiceChannel);
+          if (typeof playableInput === "string") {
+            playableInput = await resolveYtDlpInput(distube, normalizedQuery, resolveOptions);
+          }
           await distube.play(voiceCheck.voiceChannel, playableInput, playOptions);
         } catch (retryError) {
           const errorReason = formatPlaybackError(retryError);

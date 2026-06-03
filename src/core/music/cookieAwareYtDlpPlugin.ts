@@ -15,6 +15,20 @@ type YtDlpFormat = {
   tbr?: unknown;
 };
 
+const DEFAULT_YTDLP_TIMEOUT_MS = 15_000;
+const DEFAULT_YTDLP_SEARCH_LIMIT = 5;
+const DEFAULT_YTDLP_MAX_CANDIDATES = 3;
+
+class NoPlayableAudioFormatsError extends Error {
+  constructor(hasCookies: boolean) {
+    super(
+      hasCookies
+        ? "YouTube returned no playable audio formats from Railway. Refresh YOUTUBE_COOKIES_BASE64; if it still fails, set YTDLP_PROXY/YOUTUBE_PROXY."
+        : "YouTube returned no playable audio formats from Railway. Set YOUTUBE_COOKIES_BASE64; if it still fails, set YTDLP_PROXY/YOUTUBE_PROXY."
+    );
+  }
+}
+
 function isPlaylist(info: YtDlpInfo): boolean {
   return Array.isArray(info.entries);
 }
@@ -27,7 +41,47 @@ function formatYtDlpError(error: unknown): string {
   return String(error);
 }
 
+function envNumber(name: string, fallback: number, min: number, max: number): number {
+  const parsed = Number(process.env[name]);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+
+  return Math.min(max, Math.max(min, Math.floor(parsed)));
+}
+
+function ytDlpTimeoutMs(): number {
+  return envNumber("YTDLP_TIMEOUT_MS", DEFAULT_YTDLP_TIMEOUT_MS, 5_000, 45_000);
+}
+
+function ytDlpSearchLimit(): number {
+  return envNumber("YTDLP_SEARCH_LIMIT", DEFAULT_YTDLP_SEARCH_LIMIT, 1, 10);
+}
+
+function ytDlpMaxCandidates(): number {
+  return envNumber("YTDLP_MAX_CANDIDATES", DEFAULT_YTDLP_MAX_CANDIDATES, 1, 10);
+}
+
+function getYtDlpProxy(): string | undefined {
+  return process.env.YTDLP_PROXY || process.env.YOUTUBE_PROXY || undefined;
+}
+
+function getExtractorArgs(): Array<string | undefined> {
+  const configured = process.env.YTDLP_EXTRACTOR_ARGS?.trim();
+  const values = [
+    configured || undefined,
+    undefined,
+    "youtube:player_client=android,ios,web",
+    "youtube:player_client=android",
+    "youtube:player_client=web"
+  ];
+
+  return values.filter((value, index, array) => array.indexOf(value) === index);
+}
+
 function ytDlpBaseFlags(cookieFilePath: string | undefined, extra: Record<string, unknown> = {}) {
+  const proxy = getYtDlpProxy();
+
   return {
     ignoreConfig: true,
     dumpSingleJson: true,
@@ -35,6 +89,7 @@ function ytDlpBaseFlags(cookieFilePath: string | undefined, extra: Record<string
     skipDownload: true,
     simulate: true,
     ...(cookieFilePath ? { cookies: cookieFilePath } : {}),
+    ...(proxy ? { proxy } : {}),
     ...extra
   };
 }
@@ -50,17 +105,30 @@ function ytDlpSearchFlags(cookieFilePath: string | undefined, extra: Record<stri
   return ytDlpBaseFlags(cookieFilePath, {
     flatPlaylist: true,
     ignoreErrors: true,
-    playlistEnd: 10,
+    playlistEnd: ytDlpSearchLimit(),
     ...extra
   });
 }
 
 function ytDlpStreamFlagSets(cookieFilePath: string | undefined): Record<string, unknown>[] {
-  return [
-    ytDlpStreamFlags(cookieFilePath),
-    ytDlpStreamFlags(cookieFilePath, { ignoreNoFormatsError: true }),
-    ytDlpBaseFlags(cookieFilePath, { ignoreNoFormatsError: true })
-  ];
+  const extractorArgs = getExtractorArgs();
+  const withFormat = extractorArgs.map((value) =>
+    ytDlpStreamFlags(cookieFilePath, {
+      ...(value ? { extractorArgs: value } : {})
+    })
+  );
+  const metadataFallback = extractorArgs.slice(0, 2).flatMap((value) => [
+    ytDlpStreamFlags(cookieFilePath, {
+      ignoreNoFormatsError: true,
+      ...(value ? { extractorArgs: value } : {})
+    }),
+    ytDlpBaseFlags(cookieFilePath, {
+      ignoreNoFormatsError: true,
+      ...(value ? { extractorArgs: value } : {})
+    })
+  ]);
+
+  return [...withFormat, ...metadataFallback];
 }
 
 function toKebabCase(input: string): string {
@@ -249,11 +317,28 @@ async function ensureStandaloneYtDlp(): Promise<string> {
 async function ytDlpJson(url: string, flags: Record<string, unknown>): Promise<YtDlpInfo> {
   const binaryPath = await ensureStandaloneYtDlp();
   const args = toYtDlpArgs(url, flags);
+  const timeoutMs = ytDlpTimeoutMs();
 
   return new Promise((resolve, reject) => {
     const process = spawn(binaryPath, args, { windowsHide: true });
     let stdout = "";
     let stderr = "";
+    let settled = false;
+
+    const finish = (callback: () => void) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      clearTimeout(timeout);
+      callback();
+    };
+
+    const timeout = setTimeout(() => {
+      process.kill();
+      finish(() => reject(new Error(`yt-dlp timed out after ${timeoutMs}ms`)));
+    }, timeoutMs);
 
     process.stdout?.on("data", (chunk) => {
       stdout += chunk;
@@ -263,17 +348,20 @@ async function ytDlpJson(url: string, flags: Record<string, unknown>): Promise<Y
       stderr += chunk;
     });
 
-    process.on("error", reject);
+    process.on("error", (error) => {
+      finish(() => reject(error));
+    });
     process.on("close", (code) => {
       if (code !== 0) {
-        reject(new Error((stderr || stdout || `yt-dlp exited with code ${code}`).trim()));
+        finish(() => reject(new Error((stderr || stdout || `yt-dlp exited with code ${code}`).trim())));
         return;
       }
 
       try {
-        resolve(JSON.parse(stdout) as YtDlpInfo);
+        const parsed = JSON.parse(stdout) as YtDlpInfo;
+        finish(() => resolve(parsed));
       } catch (error) {
-        reject(error);
+        finish(() => reject(error));
       }
     });
   });
@@ -295,7 +383,11 @@ async function ytDlpPlayableInfo(url: string, cookieFilePath: string | undefined
     }
   }
 
-  throw new Error(errors.slice(0, 3).join(" | ") || "yt-dlp did not return playable metadata.");
+  if (errors.some((error) => error.includes("metadata without playable audio formats") || error.includes("Requested format is not available"))) {
+    throw new NoPlayableAudioFormatsError(Boolean(cookieFilePath));
+  }
+
+  throw new Error(errors.slice(0, 2).join(" | ") || "yt-dlp did not return playable metadata.");
 }
 
 class CookieAwareYtDlpSong<T = unknown> extends Song<T> {
@@ -378,8 +470,9 @@ export class CookieAwareYtDlpPlugin extends PlayableExtractorPlugin {
   }
 
   async resolveSearch<T>(query: string, options: ResolveOptions<T>): Promise<Song<T>> {
+    const searchLimit = Math.max(ytDlpSearchLimit(), ytDlpMaxCandidates());
     const info = await ytDlpJson(
-      toYtSearchQuery(query, 10),
+      toYtSearchQuery(query, searchLimit),
       ytDlpSearchFlags(this.cookieFilePath)
     ).catch((error: unknown) => {
       throw new DisTubeError("YTDLP_ERROR", formatYtDlpError(error));
@@ -394,7 +487,7 @@ export class CookieAwareYtDlpPlugin extends PlayableExtractorPlugin {
       : [];
     const errors: string[] = [];
 
-    for (const entry of entries) {
+    for (const entry of entries.slice(0, ytDlpMaxCandidates())) {
       const candidateUrl = getSearchCandidateUrl(entry);
       if (!candidateUrl) {
         continue;
@@ -410,7 +503,12 @@ export class CookieAwareYtDlpPlugin extends PlayableExtractorPlugin {
       }
     }
 
-    const reason = errors.length > 0 ? ` ${errors.slice(0, 3).join(" | ")}` : "";
+    const noAudioFormatErrors = errors.filter((error) => error.includes("YouTube returned no playable audio formats"));
+    if (noAudioFormatErrors.length > 0 && noAudioFormatErrors.length === errors.length) {
+      throw new DisTubeError("YTDLP_ERROR", noAudioFormatErrors[0]);
+    }
+
+    const reason = errors.length > 0 ? ` ${errors.slice(0, 2).join(" | ")}` : "";
     throw new DisTubeError("YTDLP_ERROR", `No playable YouTube search results were found.${reason}`);
   }
 
