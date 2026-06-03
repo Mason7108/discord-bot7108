@@ -1,8 +1,13 @@
 import { SlashCommandBuilder, type GuildTextBasedChannel } from "discord.js";
+import { SearchResultType, YouTubePlugin } from "@distube/youtube";
+import type { DisTube, Playlist, Song } from "distube";
 import type { CommandDefinition } from "../../../core/types.js";
+import { CookieAwareYtDlpPlugin } from "../../../core/music/cookieAwareYtDlpPlugin.js";
 import { ensureDisTube, ensureSameVoiceAsBot, getMissingBotPlaybackPermissions } from "./shared.js";
 import { errorEmbed, successEmbed } from "../../../utils/embeds.js";
 import { replyError, replySuccess } from "../../../utils/replies.js";
+
+type PlayInput = string | Song | Playlist;
 
 function normalizePlayQuery(input: string): string {
   const trimmed = input.trim();
@@ -30,6 +35,68 @@ function normalizePlayQuery(input: string): string {
   }
 
   return trimmed;
+}
+
+function isUrl(input: string): boolean {
+  try {
+    const parsed = new URL(input);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function isYouTubeUrl(input: string): boolean {
+  try {
+    const parsed = new URL(input);
+    return parsed.hostname.includes("youtube.com") || parsed.hostname === "youtu.be";
+  } catch {
+    return false;
+  }
+}
+
+function getYouTubePlugin(distube: DisTube): YouTubePlugin | undefined {
+  return distube.plugins.find((plugin): plugin is YouTubePlugin => plugin instanceof YouTubePlugin);
+}
+
+function getYtDlpPlugin(distube: DisTube): CookieAwareYtDlpPlugin | undefined {
+  return distube.plugins.find((plugin): plugin is CookieAwareYtDlpPlugin => plugin instanceof CookieAwareYtDlpPlugin);
+}
+
+async function resolveYtDlpInput(
+  distube: DisTube,
+  query: string,
+  resolveOptions: { member: never; metadata: { requestedBy: string } }
+): Promise<PlayInput> {
+  const ytDlpPlugin = getYtDlpPlugin(distube);
+  if (!ytDlpPlugin) {
+    return query;
+  }
+
+  if (isYouTubeUrl(query)) {
+    return ytDlpPlugin.resolve(query, resolveOptions);
+  }
+
+  if (isUrl(query)) {
+    return query;
+  }
+
+  const youtubePlugin = getYouTubePlugin(distube);
+  if (!youtubePlugin) {
+    return query;
+  }
+
+  const [result] = await youtubePlugin.search(query, {
+    type: SearchResultType.VIDEO,
+    limit: 1,
+    safeSearch: false
+  });
+
+  if (!result?.url) {
+    return query;
+  }
+
+  return ytDlpPlugin.resolve(result.url, resolveOptions);
 }
 
 function formatPlaybackError(error: unknown): string {
@@ -80,12 +147,15 @@ const command: CommandDefinition = {
 
     const query = interaction.options.getString("query", true);
     const normalizedQuery = normalizePlayQuery(query);
-    const playOptions = {
-      textChannel: interaction.channel as GuildTextBasedChannel,
+    const resolveOptions = {
       member: interaction.member as never,
       metadata: {
         requestedBy: interaction.user.id
       }
+    };
+    const playOptions = {
+      textChannel: interaction.channel as GuildTextBasedChannel,
+      ...resolveOptions
     };
 
     // Song resolution can take >3 seconds; acknowledge early to avoid interaction timeout.
@@ -93,15 +163,18 @@ const command: CommandDefinition = {
       await interaction.deferReply();
     }
 
+    let playableInput: PlayInput = normalizedQuery;
+
     try {
-      await distube.play(voiceCheck.voiceChannel, normalizedQuery, playOptions);
+      playableInput = await resolveYtDlpInput(distube, normalizedQuery, resolveOptions);
+      await distube.play(voiceCheck.voiceChannel, playableInput, playOptions);
     } catch (error) {
       if (isVoiceConnectionTimeout(error) && interaction.guildId) {
         // Retry once after forcing a clean voice reconnect.
         try {
           distube.voices.leave(interaction.guildId);
           await new Promise((resolve) => setTimeout(resolve, 1_000));
-          await distube.play(voiceCheck.voiceChannel, normalizedQuery, playOptions);
+          await distube.play(voiceCheck.voiceChannel, playableInput, playOptions);
         } catch (retryError) {
           const errorReason = formatPlaybackError(retryError);
           const helpfulHint =

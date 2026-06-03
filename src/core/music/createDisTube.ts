@@ -1,9 +1,12 @@
 import { DisTube, Events, type Queue, type Song } from "distube";
 import { SpotifyPlugin } from "@distube/spotify";
 import { YouTubePlugin } from "@distube/youtube";
-import { YtDlpPlugin } from "@distube/yt-dlp";
 import ffmpegStatic from "ffmpeg-static";
 import type { Client } from "discord.js";
+import { writeFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { CookieAwareYtDlpPlugin } from "./cookieAwareYtDlpPlugin.js";
 import { logger } from "../../utils/logger.js";
 
 type YouTubeCookie = {
@@ -53,6 +56,41 @@ function parseYouTubeCookies(): YouTubeCookie[] | undefined {
   }
 }
 
+function toNetscapeBoolean(value: boolean | undefined): "TRUE" | "FALSE" {
+  return value ? "TRUE" : "FALSE";
+}
+
+function sanitizeCookieField(value: unknown): string {
+  return String(value ?? "").replace(/[\t\r\n]/g, "");
+}
+
+function writeYtDlpCookieFile(cookies: YouTubeCookie[] | undefined): string | undefined {
+  if (!cookies?.length) {
+    return undefined;
+  }
+
+  const cookieFilePath = path.join(os.tmpdir(), "bot7108-youtube-cookies.txt");
+  const lines = [
+    "# Netscape HTTP Cookie File",
+    ...cookies.map((cookie) => {
+      const domain = sanitizeCookieField(cookie.domain || ".youtube.com");
+      const includeSubdomains = toNetscapeBoolean(!cookie.hostOnly || domain.startsWith("."));
+      const pathValue = sanitizeCookieField(cookie.path || "/");
+      const secure = toNetscapeBoolean(cookie.secure);
+      const expires = Number.isFinite(cookie.expirationDate) ? String(Math.floor(cookie.expirationDate ?? 0)) : "0";
+      const name = sanitizeCookieField(cookie.name);
+      const value = sanitizeCookieField(cookie.value);
+
+      return [domain, includeSubdomains, pathValue, secure, expires, name, value].join("\t");
+    })
+  ];
+
+  writeFileSync(cookieFilePath, `${lines.join("\n")}\n`, { encoding: "utf8", mode: 0o600 });
+  logger.info({ cookieCount: cookies.length }, "Prepared YouTube cookie file for yt-dlp");
+
+  return cookieFilePath;
+}
+
 function formatDisTubeError(error: unknown): string {
   if (error instanceof Error && error.message.trim()) {
     const compactMessage = error.message.replace(/\s+/g, " ").trim();
@@ -69,11 +107,16 @@ function formatDisTubeError(error: unknown): string {
 export async function createDisTube(client: Client): Promise<DisTube> {
   const ffmpegPath = process.env.FFMPEG_PATH || (typeof ffmpegStatic === "string" ? ffmpegStatic : "ffmpeg");
   const youtubeCookies = parseYouTubeCookies();
+  const ytDlpCookieFile = writeYtDlpCookieFile(youtubeCookies);
 
   const distube = new DisTube(client as never, {
     ffmpeg: { path: ffmpegPath },
     emitNewSongOnly: true,
-    plugins: [new SpotifyPlugin(), new YouTubePlugin({ cookies: youtubeCookies }), new YtDlpPlugin()] as never
+    plugins: [
+      new SpotifyPlugin(),
+      new CookieAwareYtDlpPlugin(ytDlpCookieFile),
+      new YouTubePlugin({ cookies: youtubeCookies })
+    ] as never
   });
 
   distube.on(Events.PLAY_SONG, (queue: Queue, song: Song) => {

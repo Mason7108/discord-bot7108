@@ -105,7 +105,7 @@ Token/port compatibility:
 
 ## Music Playback Notes
 
-YouTube may block datacenter playback with `Sign in to confirm you're not a bot`. If that happens, export YouTube cookies from a dedicated YouTube account and set them in Railway as `YOUTUBE_COOKIES_BASE64`.
+YouTube may block datacenter playback with `Sign in to confirm you're not a bot` or reject anonymous format extraction. If that happens, export YouTube cookies from a dedicated YouTube account and set them in Railway as `YOUTUBE_COOKIES_BASE64`. The bot uses those cookies for YouTube search and for `yt-dlp` stream extraction.
 
 Expected value: base64-encoded JSON cookie array from a browser cookie export tool. Do not paste cookies into code or commit them. If you use raw JSON instead, set `YOUTUBE_COOKIES` or `YOUTUBE_COOKIES_JSON`.
 
