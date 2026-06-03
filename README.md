@@ -65,6 +65,7 @@ Optional:
 - `DEV_GUILD_ID` (guild-scoped slash sync in development)
 - `API_PORT`
 - `AI_API_KEY`
+- `YOUTUBE_COOKIES_BASE64` (recommended) or `YOUTUBE_COOKIES`/`YOUTUBE_COOKIES_JSON` (optional YouTube cookie JSON array for music playback when YouTube blocks anonymous server playback)
 - `DISCORD_OAUTH_CLIENT_SECRET` (required for the terms agreement submit flow)
 - `AGREEMENT_COOKIE_SECRET` (required for signed agreement/OAuth cookies)
 
@@ -101,6 +102,12 @@ Token/port compatibility:
 - Music: `/play /pause /resume /skip /queue /stop /volume /music247`
 - Giveaways: `/giveaway start|end|reroll|delete`
 - Utility/Fun: `/ping /serverinfo /userinfo /avatar /poll /remind /math /splitvc /movevc /meme /eightball /joke /roll /trivia /askai`
+
+## Music Playback Notes
+
+YouTube may block datacenter playback with `Sign in to confirm you're not a bot`. If that happens, export YouTube cookies from a dedicated YouTube account and set them in Railway as `YOUTUBE_COOKIES_BASE64`.
+
+Expected value: base64-encoded JSON cookie array from a browser cookie export tool. Do not paste cookies into code or commit them. If you use raw JSON instead, set `YOUTUBE_COOKIES` or `YOUTUBE_COOKIES_JSON`.
 
 ## Verification Flow
 
