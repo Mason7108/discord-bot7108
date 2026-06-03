@@ -161,7 +161,7 @@ https://your-app.up.railway.app/auth/discord/callback
 2. In Railway, create a new project from the repo.
 3. Set all required environment variables (`BOT_TOKEN`/`DISCORD_TOKEN`, `CLIENT_ID`, `MONGO_URI`, verification vars).
 4. Ensure `BASE_URL` matches your Railway public URL.
-5. Deploy. Railway provides `PORT` automatically; the app already supports it.
+5. Deploy. Railway provides `PORT` automatically; the app already supports it. The included `nixpacks.toml` installs Node.js 22 and Python 3 for `yt-dlp` music playback.
 
 ## Notes
 
