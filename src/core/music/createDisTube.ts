@@ -47,6 +47,20 @@ function createFfmpegInputArgs(): Record<string, string> {
   };
 }
 
+function resolveFfmpegPath(): string {
+  if (process.env.FFMPEG_PATH) {
+    return process.env.FFMPEG_PATH;
+  }
+
+  // The ffmpeg-static Linux binary can segfault on Railway/Nixpacks while
+  // reading remote YouTube streams. Prefer the system package there.
+  if (process.platform === "linux") {
+    return "ffmpeg";
+  }
+
+  return typeof ffmpegStatic === "string" ? ffmpegStatic : "ffmpeg";
+}
+
 function parseYouTubeCookies(): YouTubeCookie[] | undefined {
   const source = process.env.YOUTUBE_COOKIES ?? process.env.YOUTUBE_COOKIES_JSON;
   const encodedSource = process.env.YOUTUBE_COOKIES_BASE64;
@@ -414,7 +428,7 @@ function attachVoiceDebugLogging(queue: Queue): void {
 }
 
 export async function createDisTube(client: Client): Promise<DisTube> {
-  const ffmpegPath = process.env.FFMPEG_PATH || (typeof ffmpegStatic === "string" ? ffmpegStatic : "ffmpeg");
+  const ffmpegPath = resolveFfmpegPath();
   const youtubeCookies = parseYouTubeCookies();
   const ytDlpCookieFile = writeYtDlpCookieFile(youtubeCookies);
   const youtubePluginCookies = filterYouTubePluginCookies(youtubeCookies);

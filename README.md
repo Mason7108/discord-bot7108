@@ -124,6 +124,8 @@ After a song starts, the bot checks whether Discord voice is actually healthy. I
 
 If `/volume` reports `No active queue` immediately after `Now playing`, the stream ended before Discord received sustained audio. The bot reports this as a short-finish diagnostic and points to the deploy logs, YouTube cookies, or proxy settings.
 
+Railway installs system `ffmpeg` through `nixpacks.toml`, and the bot prefers that Linux binary over `ffmpeg-static`. If logs show `signal=SIGSEGV` from `/app/node_modules/ffmpeg-static/ffmpeg`, redeploy the latest commit so Railway uses the system package.
+
 ## Verification Flow
 
 1. On startup, the bot checks `VERIFY_CHANNEL_ID` and ensures exactly one verification message exists.
