@@ -1,5 +1,6 @@
 [phases.setup]
-nixPkgs = ["nodejs_22", "python3", "ffmpeg"]
+nixPkgs = ["...", "nodejs_22", "python3"]
+aptPkgs = ["...", "ffmpeg"]
 
 [phases.install]
 cmds = [
@@ -8,7 +9,7 @@ cmds = [
 ]
 
 [phases.build]
-cmds = ["npm run build"]
+cmds = ["ffmpeg -version", "npm run build"]
 
 [start]
 cmd = "npm start"

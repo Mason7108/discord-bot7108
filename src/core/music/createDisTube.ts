@@ -492,7 +492,7 @@ export async function createDisTube(client: Client): Promise<DisTube> {
     forgetPlaybackStart(queue);
   });
 
-  logger.info({ ffmpegPath }, "DisTube initialized");
+  logger.info(`DisTube initialized with ffmpegPath=${ffmpegPath}`);
 
   return distube;
 }
