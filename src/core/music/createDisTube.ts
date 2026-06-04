@@ -21,6 +21,8 @@ type YouTubeCookie = {
   sameSite?: string;
 };
 
+const YOUTUBE_COOKIE_HOST = "www.youtube.com";
+
 function parseYouTubeCookies(): YouTubeCookie[] | undefined {
   const source = process.env.YOUTUBE_COOKIES ?? process.env.YOUTUBE_COOKIES_JSON;
   const encodedSource = process.env.YOUTUBE_COOKIES_BASE64;
@@ -53,6 +55,44 @@ function parseYouTubeCookies(): YouTubeCookie[] | undefined {
   } catch (error) {
     logger.warn({ err: error instanceof Error ? error.message : error }, "Ignoring invalid YouTube cookies configuration");
     return undefined;
+  }
+}
+
+function cookieDomainMatchesHost(cookie: YouTubeCookie, host: string): boolean {
+  const domain = sanitizeCookieField(cookie.domain || ".youtube.com")
+    .replace(/^\./, "")
+    .toLowerCase();
+  const normalizedHost = host.toLowerCase();
+
+  return normalizedHost === domain || normalizedHost.endsWith(`.${domain}`);
+}
+
+function filterYouTubePluginCookies(cookies: YouTubeCookie[] | undefined): YouTubeCookie[] | undefined {
+  if (!cookies?.length) {
+    return undefined;
+  }
+
+  const filtered = cookies.filter((cookie) => cookieDomainMatchesHost(cookie, YOUTUBE_COOKIE_HOST));
+  const droppedCount = cookies.length - filtered.length;
+
+  if (droppedCount > 0) {
+    logger.info({ droppedCount, keptCount: filtered.length }, "Filtered non-YouTube cookies before creating YouTube plugin");
+  }
+
+  if (filtered.length === 0) {
+    logger.warn("No cookies matched www.youtube.com for the YouTube plugin; continuing with yt-dlp cookies only.");
+    return undefined;
+  }
+
+  return filtered;
+}
+
+function createYouTubePlugin(cookies: YouTubeCookie[] | undefined): YouTubePlugin {
+  try {
+    return new YouTubePlugin({ cookies });
+  } catch (error) {
+    logger.warn({ err: error instanceof Error ? error.message : error }, "Ignoring YouTube plugin cookies because they could not be loaded");
+    return new YouTubePlugin();
   }
 }
 
@@ -108,6 +148,7 @@ export async function createDisTube(client: Client): Promise<DisTube> {
   const ffmpegPath = process.env.FFMPEG_PATH || (typeof ffmpegStatic === "string" ? ffmpegStatic : "ffmpeg");
   const youtubeCookies = parseYouTubeCookies();
   const ytDlpCookieFile = writeYtDlpCookieFile(youtubeCookies);
+  const youtubePluginCookies = filterYouTubePluginCookies(youtubeCookies);
 
   const distube = new DisTube(client as never, {
     ffmpeg: { path: ffmpegPath },
@@ -115,7 +156,7 @@ export async function createDisTube(client: Client): Promise<DisTube> {
     plugins: [
       new SpotifyPlugin(),
       new CookieAwareYtDlpPlugin(ytDlpCookieFile),
-      new YouTubePlugin({ cookies: youtubeCookies })
+      createYouTubePlugin(youtubePluginCookies)
     ] as never
   });
 
