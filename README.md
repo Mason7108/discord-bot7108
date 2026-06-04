@@ -122,6 +122,8 @@ yt-dlp and FFmpeg use browser-like request headers when extracting and reading Y
 
 After a song starts, the bot checks whether Discord voice is actually healthy. If it reports missing UDP ping, the host is not completing Discord's voice UDP path even though commands and queue messages still work. Move the bot to a VPS or another host with reliable Discord voice UDP, or use a Lavalink node hosted there.
 
+If `/volume` reports `No active queue` immediately after `Now playing`, the stream ended before Discord received sustained audio. The bot reports this as a short-finish diagnostic and points to the deploy logs, YouTube cookies, or proxy settings.
+
 ## Verification Flow
 
 1. On startup, the bot checks `VERIFY_CHANNEL_ID` and ensures exactly one verification message exists.

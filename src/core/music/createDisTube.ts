@@ -27,7 +27,9 @@ const DEFAULT_FFMPEG_USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36";
 const DEFAULT_FFMPEG_REFERER = "https://www.youtube.com/";
 const PLAYBACK_HEALTH_CHECK_DELAY_MS = 7_000;
+const PLAYBACK_SHORT_FINISH_MS = 10_000;
 const playbackWarnings = new Set<string>();
+const playbackStarts = new Map<string, { startedAt: number; songId: string; songUrl?: string; songName?: string }>();
 
 function createFfmpegInputArgs(): Record<string, string> {
   const userAgent = process.env.FFMPEG_USER_AGENT || process.env.YTDLP_USER_AGENT || DEFAULT_FFMPEG_USER_AGENT;
@@ -185,6 +187,58 @@ function warnOnce(queue: Queue, key: string, message: string, details: Record<st
 function currentSongStillPlaying(queue: Queue, song: Song): boolean {
   const current = queue.songs[0];
   return Boolean(current && current.id === song.id && current.url === song.url);
+}
+
+function rememberPlaybackStart(queue: Queue, song: Song): void {
+  playbackStarts.set(queue.id, {
+    startedAt: Date.now(),
+    songId: song.id,
+    songUrl: song.url,
+    songName: song.name
+  });
+}
+
+function forgetPlaybackStart(queue: Queue): void {
+  playbackStarts.delete(queue.id);
+}
+
+function samePlayback(song: Song, playback: { songId: string; songUrl?: string }): boolean {
+  return song.id === playback.songId && song.url === playback.songUrl;
+}
+
+function warnIfPlaybackEndedTooSoon(queue: Queue, song?: Song): void {
+  const playback = playbackStarts.get(queue.id);
+  if (!playback) {
+    return;
+  }
+
+  if (song && !samePlayback(song, playback)) {
+    return;
+  }
+
+  const elapsedMs = Date.now() - playback.startedAt;
+  if (elapsedMs > PLAYBACK_SHORT_FINISH_MS) {
+    forgetPlaybackStart(queue);
+    return;
+  }
+
+  const playbackDurationSec = queue.voice.playbackDuration;
+  const details = {
+    song: song?.name ?? playback.songName,
+    elapsedMs,
+    playbackDurationSec,
+    playerStatus: queue.voice.audioPlayer.state.status,
+    connectionStatus: queue.voice.connection.state.status,
+    ping: queue.voice.connection.ping
+  };
+
+  warnOnce(
+    queue,
+    "short-finish",
+    "Music diagnostic: the queue ended almost immediately after `Now playing`, so commands like `/volume` see `No active queue`. This usually means FFmpeg could not read usable audio from the extracted stream. Check Railway logs for FFmpeg/yt-dlp output, refresh `YOUTUBE_COOKIES_BASE64`, or try `YTDLP_PROXY`/`YOUTUBE_PROXY`.",
+    details
+  );
+  forgetPlaybackStart(queue);
 }
 
 function schedulePlaybackHealthCheck(queue: Queue, song: Song): void {
@@ -346,6 +400,7 @@ export async function createDisTube(client: Client): Promise<DisTube> {
     void queue.textChannel?.send({
       content: `Now playing: **${song.name}** - \`${song.formattedDuration}\``
     });
+    rememberPlaybackStart(queue, song);
     schedulePlaybackHealthCheck(queue, song);
   });
 
@@ -356,10 +411,20 @@ export async function createDisTube(client: Client): Promise<DisTube> {
   distube.on(Events.ERROR, (error: Error, queue: Queue, song?: Song) => {
     const reason = formatDisTubeError(error);
     logger.error({ err: error, guildId: queue.id, song: song?.name }, "DisTube error");
+    forgetPlaybackStart(queue);
 
     void queue.textChannel?.send({
       content: `Playback error${song?.name ? ` for **${song.name}**` : ""}: ${reason}`
     });
+  });
+
+  distube.on(Events.FINISH_SONG, (queue: Queue, song: Song) => {
+    warnIfPlaybackEndedTooSoon(queue, song);
+  });
+
+  distube.on(Events.DELETE_QUEUE, (queue: Queue) => {
+    warnIfPlaybackEndedTooSoon(queue);
+    forgetPlaybackStart(queue);
   });
 
   logger.info({ ffmpegPath }, "DisTube initialized");
