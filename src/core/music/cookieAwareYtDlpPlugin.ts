@@ -18,6 +18,8 @@ type YtDlpFormat = {
 const DEFAULT_YTDLP_TIMEOUT_MS = 15_000;
 const DEFAULT_YTDLP_SEARCH_LIMIT = 5;
 const DEFAULT_YTDLP_MAX_CANDIDATES = 3;
+const DEFAULT_YTDLP_USER_AGENT =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36";
 
 class NoPlayableAudioFormatsError extends Error {
   constructor(hasCookies: boolean) {
@@ -66,6 +68,10 @@ function getYtDlpProxy(): string | undefined {
   return process.env.YTDLP_PROXY || process.env.YOUTUBE_PROXY || undefined;
 }
 
+function getYtDlpUserAgent(): string {
+  return process.env.YTDLP_USER_AGENT || process.env.FFMPEG_USER_AGENT || DEFAULT_YTDLP_USER_AGENT;
+}
+
 function getExtractorArgs(): Array<string | undefined> {
   const configured = process.env.YTDLP_EXTRACTOR_ARGS?.trim();
   const values = [
@@ -86,6 +92,7 @@ function ytDlpBaseFlags(cookieFilePath: string | undefined, extra: Record<string
     ignoreConfig: true,
     dumpSingleJson: true,
     noWarnings: true,
+    userAgent: getYtDlpUserAgent(),
     remoteComponents: "ejs:github",
     jsRuntimes: "node",
     skipDownload: true,

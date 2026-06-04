@@ -22,6 +22,24 @@ type YouTubeCookie = {
 };
 
 const YOUTUBE_COOKIE_HOST = "www.youtube.com";
+const DEFAULT_FFMPEG_USER_AGENT =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36";
+const DEFAULT_FFMPEG_REFERER = "https://www.youtube.com/";
+
+function createFfmpegInputArgs(): Record<string, string> {
+  const userAgent = process.env.FFMPEG_USER_AGENT || process.env.YTDLP_USER_AGENT || DEFAULT_FFMPEG_USER_AGENT;
+  const referer = process.env.FFMPEG_REFERER || DEFAULT_FFMPEG_REFERER;
+  const headers = [
+    `Referer: ${referer}`,
+    "Accept: */*",
+    "Accept-Language: en-US,en;q=0.9"
+  ];
+
+  return {
+    user_agent: userAgent,
+    headers: `${headers.join("\r\n")}\r\n`
+  };
+}
 
 function parseYouTubeCookies(): YouTubeCookie[] | undefined {
   const source = process.env.YOUTUBE_COOKIES ?? process.env.YOUTUBE_COOKIES_JSON;
@@ -137,6 +155,12 @@ function formatDisTubeError(error: unknown): string {
     if (compactMessage.includes("Sign in to confirm you're not a bot")) {
       return "YouTube is blocking anonymous playback. Set YOUTUBE_COOKIES_BASE64 in the bot host with exported YouTube cookies.";
     }
+    if (compactMessage.includes("Cannot play audio as no valid encryption package is installed")) {
+      return "Discord voice encryption is missing. Run npm install so @noble/ciphers is installed, then redeploy/restart the bot.";
+    }
+    if (compactMessage.includes("ffmpeg exited with code")) {
+      return "FFmpeg could not decode the stream. The YouTube media URL may be blocked or expired; try again, refresh YOUTUBE_COOKIES_BASE64, or set YTDLP_PROXY/YOUTUBE_PROXY.";
+    }
 
     return compactMessage.length > 240 ? `${compactMessage.slice(0, 240)}...` : compactMessage;
   }
@@ -151,13 +175,26 @@ export async function createDisTube(client: Client): Promise<DisTube> {
   const youtubePluginCookies = filterYouTubePluginCookies(youtubeCookies);
 
   const distube = new DisTube(client as never, {
-    ffmpeg: { path: ffmpegPath },
+    ffmpeg: {
+      path: ffmpegPath,
+      args: {
+        input: createFfmpegInputArgs()
+      }
+    },
     emitNewSongOnly: true,
     plugins: [
       new SpotifyPlugin(),
       new CookieAwareYtDlpPlugin(ytDlpCookieFile),
       createYouTubePlugin(youtubePluginCookies)
     ] as never
+  });
+
+  distube.on(Events.DEBUG, (message: string) => {
+    logger.debug({ source: "distube" }, message);
+  });
+
+  distube.on(Events.FFMPEG_DEBUG, (message: string) => {
+    logger.debug({ source: "ffmpeg" }, message);
   });
 
   distube.on(Events.PLAY_SONG, (queue: Queue, song: Song) => {

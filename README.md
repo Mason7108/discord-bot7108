@@ -71,6 +71,8 @@ Optional:
 - `YTDLP_SEARCH_LIMIT` (optional, default `5`)
 - `YTDLP_MAX_CANDIDATES` (optional, default `3`)
 - `YTDLP_EXTRACTOR_ARGS` (optional advanced yt-dlp extractor args override)
+- `FFMPEG_USER_AGENT` or `YTDLP_USER_AGENT` (optional media request user-agent override)
+- `FFMPEG_REFERER` (optional media request referer override, defaults to `https://www.youtube.com/`)
 - `DISCORD_OAUTH_CLIENT_SECRET` (required for the terms agreement submit flow)
 - `AGREEMENT_COOKIE_SECRET` (required for signed agreement/OAuth cookies)
 
@@ -115,6 +117,8 @@ YouTube may block datacenter playback with `Sign in to confirm you're not a bot`
 Expected value: base64-encoded JSON cookie array from a browser cookie export tool. Do not paste cookies into code or commit them. If you use raw JSON instead, set `YOUTUBE_COOKIES` or `YOUTUBE_COOKIES_JSON`.
 
 If Railway still receives `Requested format is not available` or `no playable audio formats` after cookies are set, YouTube is likely blocking Railway's host/IP. Set `YTDLP_PROXY` or `YOUTUBE_PROXY` to a proxy URL so `yt-dlp` extracts through a less-blocked network. The bot also supports `YTDLP_TIMEOUT_MS`, `YTDLP_SEARCH_LIMIT`, and `YTDLP_MAX_CANDIDATES` to keep failed lookups from hanging too long.
+
+yt-dlp and FFmpeg use browser-like request headers when extracting and reading YouTube media URLs. If playback still says it started but no audio comes through, set `LOG_LEVEL=debug` and check the deploy logs for DisTube/FFmpeg messages. You can override those media headers with `YTDLP_USER_AGENT`, `FFMPEG_USER_AGENT`, and `FFMPEG_REFERER`.
 
 ## Verification Flow
 
