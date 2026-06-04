@@ -5,14 +5,29 @@ import { access, chmod, rename, unlink } from "node:fs/promises";
 import https from "node:https";
 import os from "node:os";
 import path from "node:path";
+import { logger } from "../../utils/logger.js";
 
 type YtDlpInfo = Record<string, any>;
 type YtDlpFormat = {
   url?: unknown;
+  format_id?: unknown;
+  ext?: unknown;
+  protocol?: unknown;
   acodec?: unknown;
   vcodec?: unknown;
   abr?: unknown;
   tbr?: unknown;
+};
+type SelectedStream = {
+  url: string;
+  source: string;
+  formatId?: string;
+  ext?: string;
+  protocol?: string;
+  acodec?: string;
+  vcodec?: string;
+  abr?: number;
+  tbr?: number;
 };
 
 const DEFAULT_YTDLP_TIMEOUT_MS = 15_000;
@@ -165,12 +180,21 @@ function toYtDlpArgs(url: string, flags: Record<string, unknown>): string[] {
 }
 
 function hasStreamUrl(format: YtDlpFormat | undefined): format is YtDlpFormat & { url: string } {
-  return typeof format?.url === "string" && format.url.length > 0;
+  if (typeof format?.url !== "string" || format.url.length === 0) {
+    return false;
+  }
+
+  try {
+    const parsed = new URL(format.url);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
 function hasAudio(format: YtDlpFormat): boolean {
   const audioCodec = typeof format.acodec === "string" ? format.acodec : undefined;
-  return audioCodec === undefined || audioCodec.length === 0 || audioCodec !== "none";
+  return Boolean(audioCodec && audioCodec !== "none");
 }
 
 function isAudioOnly(format: YtDlpFormat): boolean {
@@ -188,7 +212,25 @@ function formatScore(format: YtDlpFormat): number {
   return audioScore + Math.max(numericValue(format.abr), numericValue(format.tbr));
 }
 
-function bestAudioStreamUrl(formats: unknown): string | undefined {
+function formatString(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function selectedStreamFromFormat(format: YtDlpFormat & { url: string }, source: string): SelectedStream {
+  return {
+    url: format.url,
+    source,
+    formatId: formatString(format.format_id),
+    ext: formatString(format.ext),
+    protocol: formatString(format.protocol),
+    acodec: formatString(format.acodec),
+    vcodec: formatString(format.vcodec),
+    abr: numericValue(format.abr) || undefined,
+    tbr: numericValue(format.tbr) || undefined
+  };
+}
+
+function bestAudioStream(formats: unknown, source: string): SelectedStream | undefined {
   if (!Array.isArray(formats)) {
     return undefined;
   }
@@ -199,16 +241,42 @@ function bestAudioStreamUrl(formats: unknown): string | undefined {
     })
     .sort((left, right) => formatScore(right) - formatScore(left));
 
-  return playableFormats[0]?.url;
+  return playableFormats[0] ? selectedStreamFromFormat(playableFormats[0], source) : undefined;
+}
+
+function getPlayableStream(info: YtDlpInfo): SelectedStream | undefined {
+  return (
+    bestAudioStream(info.requested_downloads, "requested_downloads") ??
+    bestAudioStream(info.requested_formats, "requested_formats") ??
+    (hasStreamUrl(info) && hasAudio(info) ? selectedStreamFromFormat(info, "info") : undefined) ??
+    bestAudioStream(info.formats, "formats")
+  );
 }
 
 function getPlayableStreamUrl(info: YtDlpInfo): string | undefined {
-  return (
-    bestAudioStreamUrl(info.requested_downloads) ??
-    bestAudioStreamUrl(info.requested_formats) ??
-    (hasStreamUrl(info) && hasAudio(info) ? info.url : undefined) ??
-    bestAudioStreamUrl(info.formats)
-  );
+  return getPlayableStream(info)?.url;
+}
+
+function logSelectedStream(info: YtDlpInfo, stream: SelectedStream | undefined): void {
+  if (!stream) {
+    return;
+  }
+
+  const details = {
+    extractor: info.extractor,
+    videoId: info.id ?? info.display_id,
+    title: info.title || info.fulltitle,
+    source: stream.source,
+    formatId: stream.formatId,
+    ext: stream.ext,
+    protocol: stream.protocol,
+    acodec: stream.acodec,
+    vcodec: stream.vcodec,
+    abr: stream.abr,
+    tbr: stream.tbr
+  };
+
+  logger.info(`Selected yt-dlp audio stream: ${JSON.stringify(details)}`);
 }
 
 function toYtSearchQuery(query: string, limit: number): string {
@@ -382,7 +450,7 @@ async function ytDlpPlayableInfo(url: string, cookieFilePath: string | undefined
   for (const flags of ytDlpStreamFlagSets(cookieFilePath)) {
     try {
       const info = await ytDlpJson(url, flags);
-      if (isPlaylist(info) || getPlayableStreamUrl(info)) {
+      if (isPlaylist(info) || getPlayableStream(info)) {
         return info;
       }
 
@@ -425,9 +493,10 @@ class CookieAwareYtDlpSong<T = unknown> extends Song<T> {
       options
     );
 
-    const streamUrl = getPlayableStreamUrl(info);
-    if (streamUrl && this.stream.playFromSource) {
-      this.stream.url = streamUrl;
+    const stream = getPlayableStream(info);
+    if (stream && this.stream.playFromSource) {
+      logSelectedStream(info, stream);
+      this.stream.url = stream.url;
     }
   }
 }
@@ -534,12 +603,14 @@ export class CookieAwareYtDlpPlugin extends PlayableExtractorPlugin {
       throw new DisTubeError("YTDLP_ERROR", "Cannot get stream URL for an entire playlist.");
     }
 
-    const streamUrl = getPlayableStreamUrl(info);
-    if (!streamUrl) {
+    const stream = getPlayableStream(info);
+    if (!stream) {
       throw new DisTubeError("YTDLP_ERROR", "yt-dlp did not return a playable stream URL.");
     }
 
-    return streamUrl;
+    logSelectedStream(info, stream);
+
+    return stream.url;
   }
 
   getRelatedSongs(): never[] {

@@ -30,6 +30,7 @@ const PLAYBACK_HEALTH_CHECK_DELAY_MS = 7_000;
 const PLAYBACK_SHORT_FINISH_MS = 10_000;
 const playbackWarnings = new Set<string>();
 const playbackStarts = new Map<string, { startedAt: number; songId: string; songUrl?: string; songName?: string }>();
+const recentFfmpegLogs = new Map<string, string[]>();
 
 function createFfmpegInputArgs(): Record<string, string> {
   const userAgent = process.env.FFMPEG_USER_AGENT || process.env.YTDLP_USER_AGENT || DEFAULT_FFMPEG_USER_AGENT;
@@ -173,6 +174,42 @@ function formatDisTubeError(error: unknown): string {
   return "Unknown playback error.";
 }
 
+function compactDetails(details: Record<string, unknown>): string {
+  try {
+    return JSON.stringify(details);
+  } catch {
+    return String(details);
+  }
+}
+
+function sanitizeDiagnosticLine(line: string): string {
+  return line.replace(/https?:\/\/\S+/g, "<redacted-url>").slice(0, 500);
+}
+
+function getGuildIdFromDisTubeDebug(message: string): string | undefined {
+  return /^\[([^\]]+)\]/.exec(message)?.[1];
+}
+
+function rememberFfmpegLog(message: string): void {
+  const guildId = getGuildIdFromDisTubeDebug(message);
+  if (!guildId) {
+    return;
+  }
+
+  const lines = recentFfmpegLogs.get(guildId) ?? [];
+  lines.push(sanitizeDiagnosticLine(message));
+  recentFfmpegLogs.set(guildId, lines.slice(-8));
+}
+
+function recentFfmpegSummary(guildId: string): string | undefined {
+  const lines = recentFfmpegLogs.get(guildId);
+  if (!lines?.length) {
+    return undefined;
+  }
+
+  return lines.slice(-4).join(" | ");
+}
+
 function warnOnce(queue: Queue, key: string, message: string, details: Record<string, unknown>): void {
   const scopedKey = `${queue.id}:${key}`;
   if (playbackWarnings.has(scopedKey)) {
@@ -180,7 +217,12 @@ function warnOnce(queue: Queue, key: string, message: string, details: Record<st
   }
 
   playbackWarnings.add(scopedKey);
-  logger.warn({ guildId: queue.id, ...details }, "Music playback health check failed");
+  const mergedDetails = {
+    guildId: queue.id,
+    ...details,
+    ffmpegRecent: recentFfmpegSummary(queue.id)
+  };
+  logger.warn(`Music playback health check failed (${key}): ${compactDetails(mergedDetails)}`);
   void queue.textChannel?.send({ content: message });
 }
 
@@ -229,13 +271,21 @@ function warnIfPlaybackEndedTooSoon(queue: Queue, song?: Song): void {
     playbackDurationSec,
     playerStatus: queue.voice.audioPlayer.state.status,
     connectionStatus: queue.voice.connection.state.status,
-    ping: queue.voice.connection.ping
+    ping: queue.voice.connection.ping,
+    ffmpegRecent: recentFfmpegSummary(queue.id)
   };
+  const ffmpegSummary = recentFfmpegSummary(queue.id);
+  const diagnosticMessage = [
+    "Music diagnostic: the queue ended almost immediately after `Now playing`, so commands like `/volume` see `No active queue`. This usually means FFmpeg could not read usable audio from the extracted stream. Check Railway logs for FFmpeg/yt-dlp output, refresh `YOUTUBE_COOKIES_BASE64`, or try `YTDLP_PROXY`/`YOUTUBE_PROXY`.",
+    ffmpegSummary ? `Recent FFmpeg: ${ffmpegSummary}` : undefined
+  ]
+    .filter(Boolean)
+    .join("\n");
 
   warnOnce(
     queue,
     "short-finish",
-    "Music diagnostic: the queue ended almost immediately after `Now playing`, so commands like `/volume` see `No active queue`. This usually means FFmpeg could not read usable audio from the extracted stream. Check Railway logs for FFmpeg/yt-dlp output, refresh `YOUTUBE_COOKIES_BASE64`, or try `YTDLP_PROXY`/`YOUTUBE_PROXY`.",
+    diagnosticMessage,
     details
   );
   forgetPlaybackStart(queue);
@@ -389,6 +439,7 @@ export async function createDisTube(client: Client): Promise<DisTube> {
   });
 
   distube.on(Events.FFMPEG_DEBUG, (message: string) => {
+    rememberFfmpegLog(message);
     logger.debug({ source: "ffmpeg" }, message);
   });
 
