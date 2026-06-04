@@ -124,7 +124,7 @@ After a song starts, the bot checks whether Discord voice is actually healthy. I
 
 If `/volume` reports `No active queue` immediately after `Now playing`, the stream ended before Discord received sustained audio. The bot reports this as a short-finish diagnostic and points to the deploy logs, YouTube cookies, or proxy settings.
 
-Railway installs system `ffmpeg` through `nixpacks.toml`, and the bot prefers that Linux binary over `ffmpeg-static`. The build runs `ffmpeg -version`; if Railway cannot install FFmpeg, the deploy should fail before the bot starts. If logs show `signal=SIGSEGV` from `/app/node_modules/ffmpeg-static/ffmpeg`, redeploy the latest commit so Railway uses the system package.
+Railway installs system `ffmpeg` through both `railpack.json` and `nixpacks.toml`, and the bot prefers an absolute Linux system binary over `ffmpeg-static`. The build runs `ffmpeg -version`; if Railway cannot install FFmpeg, the deploy should fail before the bot starts. If logs still say `ffmpeg is not installed at 'ffmpeg' path`, confirm Railway deployed the latest commit and, if needed, set the Railway service variable `RAILPACK_DEPLOY_APT_PACKAGES=ffmpeg`. If logs show `signal=SIGSEGV` from `/app/node_modules/ffmpeg-static/ffmpeg`, redeploy the latest commit so Railway uses the system package.
 
 ## Verification Flow
 
@@ -178,7 +178,7 @@ https://your-app.up.railway.app/auth/discord/callback
 2. In Railway, create a new project from the repo.
 3. Set all required environment variables (`BOT_TOKEN`/`DISCORD_TOKEN`, `CLIENT_ID`, `MONGO_URI`, verification vars).
 4. Ensure `BASE_URL` matches your Railway public URL.
-5. Deploy. Railway provides `PORT` automatically; the app already supports it. The included `nixpacks.toml` installs Node.js 22, Python 3, and replaces the default `yt-dlp` launcher with the standalone Linux `yt-dlp` binary for music playback.
+5. Deploy. Railway provides `PORT` automatically; the app already supports it. The included `railpack.json` and `nixpacks.toml` install Node.js 22, Python 3, system FFmpeg, and replace the default `yt-dlp` launcher with the standalone Linux `yt-dlp` binary for music playback.
 
 ## Notes
 

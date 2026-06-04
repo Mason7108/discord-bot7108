@@ -4,7 +4,7 @@ import { YouTubePlugin } from "@distube/youtube";
 import { AudioPlayerStatus, VoiceConnectionStatus } from "@discordjs/voice";
 import ffmpegStatic from "ffmpeg-static";
 import { ChannelType, type Client } from "discord.js";
-import { writeFileSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { CookieAwareYtDlpPlugin } from "./cookieAwareYtDlpPlugin.js";
@@ -55,6 +55,24 @@ function resolveFfmpegPath(): string {
   // The ffmpeg-static Linux binary can segfault on Railway/Nixpacks while
   // reading remote YouTube streams. Prefer the system package there.
   if (process.platform === "linux") {
+    const candidates = [
+      "/usr/bin/ffmpeg",
+      "/usr/local/bin/ffmpeg",
+      "/nix/var/nix/profiles/default/bin/ffmpeg",
+      "/nix/var/nix/profiles/default/sw/bin/ffmpeg",
+      "/bin/ffmpeg"
+    ];
+    const existing = candidates.find((candidate) => existsSync(candidate));
+
+    if (existing) {
+      logger.info(`Resolved system ffmpeg at ${existing}`);
+      return existing;
+    }
+
+    logger.warn(
+      `No system ffmpeg found in expected Linux paths: ${candidates.join(", ")}. ` +
+        "Railway should install it through railpack.json deploy.aptPackages or RAILPACK_DEPLOY_APT_PACKAGES=ffmpeg."
+    );
     return "ffmpeg";
   }
 

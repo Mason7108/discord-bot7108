@@ -1,0 +1,24 @@
+{
+  "$schema": "https://schema.railpack.com",
+  "provider": "node",
+  "packages": {
+    "node": "22",
+    "python": "3"
+  },
+  "buildAptPackages": ["ffmpeg"],
+  "steps": {
+    "install": {
+      "commands": [
+        "...",
+        "YTDLP_URL=https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux node node_modules/@distube/yt-dlp/script/download.js"
+      ]
+    },
+    "build": {
+      "commands": ["ffmpeg -version", "..."]
+    }
+  },
+  "deploy": {
+    "aptPackages": ["ffmpeg"],
+    "startCommand": "npm start"
+  }
+}
