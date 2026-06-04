@@ -86,6 +86,8 @@ function ytDlpBaseFlags(cookieFilePath: string | undefined, extra: Record<string
     ignoreConfig: true,
     dumpSingleJson: true,
     noWarnings: true,
+    remoteComponents: "ejs:github",
+    jsRuntimes: "node",
     skipDownload: true,
     simulate: true,
     ...(cookieFilePath ? { cookies: cookieFilePath } : {}),
