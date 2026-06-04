@@ -120,6 +120,8 @@ If Railway still receives `Requested format is not available` or `no playable au
 
 yt-dlp and FFmpeg use browser-like request headers when extracting and reading YouTube media URLs. If playback still says it started but no audio comes through, set `LOG_LEVEL=debug` and check the deploy logs for DisTube/FFmpeg messages. You can override those media headers with `YTDLP_USER_AGENT`, `FFMPEG_USER_AGENT`, and `FFMPEG_REFERER`.
 
+After a song starts, the bot checks whether Discord voice is actually healthy. If it reports missing UDP ping, the host is not completing Discord's voice UDP path even though commands and queue messages still work. Move the bot to a VPS or another host with reliable Discord voice UDP, or use a Lavalink node hosted there.
+
 ## Verification Flow
 
 1. On startup, the bot checks `VERIFY_CHANNEL_ID` and ensures exactly one verification message exists.

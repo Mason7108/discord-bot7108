@@ -1,8 +1,9 @@
 import { DisTube, Events, type Queue, type Song } from "distube";
 import { SpotifyPlugin } from "@distube/spotify";
 import { YouTubePlugin } from "@distube/youtube";
+import { AudioPlayerStatus, VoiceConnectionStatus } from "@discordjs/voice";
 import ffmpegStatic from "ffmpeg-static";
-import type { Client } from "discord.js";
+import { ChannelType, type Client } from "discord.js";
 import { writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -25,6 +26,8 @@ const YOUTUBE_COOKIE_HOST = "www.youtube.com";
 const DEFAULT_FFMPEG_USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36";
 const DEFAULT_FFMPEG_REFERER = "https://www.youtube.com/";
+const PLAYBACK_HEALTH_CHECK_DELAY_MS = 7_000;
+const playbackWarnings = new Set<string>();
 
 function createFfmpegInputArgs(): Record<string, string> {
   const userAgent = process.env.FFMPEG_USER_AGENT || process.env.YTDLP_USER_AGENT || DEFAULT_FFMPEG_USER_AGENT;
@@ -168,6 +171,144 @@ function formatDisTubeError(error: unknown): string {
   return "Unknown playback error.";
 }
 
+function warnOnce(queue: Queue, key: string, message: string, details: Record<string, unknown>): void {
+  const scopedKey = `${queue.id}:${key}`;
+  if (playbackWarnings.has(scopedKey)) {
+    return;
+  }
+
+  playbackWarnings.add(scopedKey);
+  logger.warn({ guildId: queue.id, ...details }, "Music playback health check failed");
+  void queue.textChannel?.send({ content: message });
+}
+
+function currentSongStillPlaying(queue: Queue, song: Song): boolean {
+  const current = queue.songs[0];
+  return Boolean(current && current.id === song.id && current.url === song.url);
+}
+
+function schedulePlaybackHealthCheck(queue: Queue, song: Song): void {
+  const timer = setTimeout(() => {
+    checkPlaybackHealth(queue, song);
+  }, PLAYBACK_HEALTH_CHECK_DELAY_MS);
+
+  timer.unref();
+}
+
+function checkPlaybackHealth(queue: Queue, song: Song): void {
+  if (!currentSongStillPlaying(queue, song)) {
+    return;
+  }
+
+  const botVoice = queue.clientMember?.voice;
+  const voiceChannel = queue.voiceChannel;
+  const playerStatus = queue.voice.audioPlayer.state.status;
+  const connectionStatus = queue.voice.connection.state.status;
+  const playbackDurationSec = queue.voice.playbackDuration;
+  const ping = queue.voice.connection.ping;
+  const details = {
+    song: song.name,
+    playerStatus,
+    connectionStatus,
+    playbackDurationSec,
+    ping,
+    voiceChannelId: voiceChannel?.id,
+    voiceChannelType: voiceChannel?.type,
+    serverMute: botVoice?.serverMute,
+    selfMute: botVoice?.selfMute,
+    suppress: botVoice?.suppress
+  };
+
+  if (botVoice?.serverMute || botVoice?.selfMute) {
+    warnOnce(
+      queue,
+      "muted",
+      "Music diagnostic: I started the player, but I am muted in the voice channel. Unmute the bot, then run `/play` again.",
+      details
+    );
+    return;
+  }
+
+  if (voiceChannel?.type === ChannelType.GuildStageVoice || botVoice?.suppress) {
+    warnOnce(
+      queue,
+      "stage-suppressed",
+      "Music diagnostic: I am in a Stage channel or suppressed as a listener. Move me to a normal voice channel or make me a speaker.",
+      details
+    );
+    return;
+  }
+
+  if (connectionStatus !== VoiceConnectionStatus.Ready) {
+    warnOnce(
+      queue,
+      "voice-not-ready",
+      `Music diagnostic: the Discord voice connection is \`${connectionStatus}\`, not \`ready\`. Rejoin the voice channel and try again.`,
+      details
+    );
+    return;
+  }
+
+  if (playerStatus === AudioPlayerStatus.Buffering || playbackDurationSec < 1) {
+    warnOnce(
+      queue,
+      "no-audio-frames",
+      "Music diagnostic: the player started, but no audio frames reached Discord after a few seconds. Check the deploy logs for FFmpeg/yt-dlp errors, then refresh YouTube cookies or try a proxy if YouTube is blocking the host.",
+      details
+    );
+    return;
+  }
+
+  if (playerStatus !== AudioPlayerStatus.Playing) {
+    warnOnce(
+      queue,
+      "player-not-playing",
+      `Music diagnostic: the audio player is \`${playerStatus}\`, not \`playing\`. Try \`/stop\`, then run \`/play\` again.`,
+      details
+    );
+    return;
+  }
+
+  if (ping.udp === undefined || ping.udp === null) {
+    warnOnce(
+      queue,
+      "udp-missing",
+      "Music diagnostic: audio frames are being produced, but Discord voice UDP has no ping. Discord voice needs UDP; if this is hosted on Railway or another web-app host, move the bot to a VPS/host with reliable Discord voice UDP or use a Lavalink node there.",
+      details
+    );
+  }
+}
+
+function attachVoiceDebugLogging(queue: Queue): void {
+  queue.voice.connection.on("debug", (message) => {
+    logger.debug({ guildId: queue.id, source: "voiceConnection" }, message);
+  });
+
+  queue.voice.connection.on("stateChange", (oldState, newState) => {
+    logger.debug(
+      {
+        guildId: queue.id,
+        oldStatus: oldState.status,
+        newStatus: newState.status,
+        ping: queue.voice.connection.ping
+      },
+      "Discord voice connection state changed"
+    );
+  });
+
+  queue.voice.audioPlayer.on("stateChange", (oldState, newState) => {
+    logger.debug(
+      {
+        guildId: queue.id,
+        oldStatus: oldState.status,
+        newStatus: newState.status,
+        playbackDurationSec: queue.voice.playbackDuration
+      },
+      "Discord audio player state changed"
+    );
+  });
+}
+
 export async function createDisTube(client: Client): Promise<DisTube> {
   const ffmpegPath = process.env.FFMPEG_PATH || (typeof ffmpegStatic === "string" ? ffmpegStatic : "ffmpeg");
   const youtubeCookies = parseYouTubeCookies();
@@ -197,10 +338,15 @@ export async function createDisTube(client: Client): Promise<DisTube> {
     logger.debug({ source: "ffmpeg" }, message);
   });
 
+  distube.on(Events.INIT_QUEUE, (queue: Queue) => {
+    attachVoiceDebugLogging(queue);
+  });
+
   distube.on(Events.PLAY_SONG, (queue: Queue, song: Song) => {
     void queue.textChannel?.send({
       content: `Now playing: **${song.name}** - \`${song.formattedDuration}\``
     });
+    schedulePlaybackHealthCheck(queue, song);
   });
 
   distube.on(Events.ADD_SONG, (queue: Queue, song: Song) => {
