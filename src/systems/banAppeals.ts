@@ -46,7 +46,7 @@ export function getAppealGuildId(env: Env): string {
 }
 
 export function getMainGuildId(env: Env, fallbackGuildId?: string): string | undefined {
-  return env.MAIN_GUILD_ID ?? env.GUILD_ID ?? fallbackGuildId;
+  return env.MAIN_GUILD_ID ?? fallbackGuildId ?? env.GUILD_ID;
 }
 
 export function isAppealGuild(guildId: string | null | undefined, env: Env): boolean {
@@ -194,6 +194,17 @@ async function fetchReviewChannel(client: BotClient, env: Env): Promise<TextChan
   return channel as TextChannel;
 }
 
+async function sendAppealOpsNotice(client: BotClient, env: Env, embed: EmbedBuilder): Promise<void> {
+  const reviewChannel = await fetchReviewChannel(client, env);
+  if (!reviewChannel) {
+    return;
+  }
+
+  await reviewChannel.send({ embeds: [embed] }).catch((error) => {
+    logger.warn({ err: error, channelId: env.APPEAL_REVIEW_CHANNEL_ID }, "Failed to send appeal ops notice");
+  });
+}
+
 async function createAppealInvite(client: BotClient, env: Env): Promise<string | null> {
   const appealGuild = await client.guilds.fetch(getAppealGuildId(env)).catch(() => null);
   if (!appealGuild) {
@@ -280,6 +291,10 @@ export async function handleGuildBanAdd(client: BotClient, ban: GuildBan, env: E
   const appealGuildId = getAppealGuildId(env);
 
   if (!mainGuildId || ban.guild.id !== mainGuildId || ban.guild.id === appealGuildId) {
+    logger.debug(
+      { banGuildId: ban.guild.id, mainGuildId, appealGuildId, userId: ban.user.id },
+      "Ignoring guild ban event outside configured main server"
+    );
     return;
   }
 
@@ -298,20 +313,54 @@ export async function handleGuildBanAdd(client: BotClient, ban: GuildBan, env: E
   });
 
   const invite = await resolveAppealInvite(client, env);
-  if (!invite) {
-    logger.warn({ mainGuildId, appealGuildId, userId: ban.user.id }, "No appeal server invite is configured or creatable");
-    return;
-  }
-
   const permanentText = record.isPermanentBan
     ? "\n\nThis ban is marked as permanent. You may join the appeal server to view your status, but the appeal form is locked."
     : "";
+  const inviteText = invite
+    ? `you may join the appeal server here: ${invite}.`
+    : "the appeal server invite is not configured yet. Please contact server staff for appeal access.";
 
-  await dmUser(
+  if (!invite) {
+    logger.warn({ mainGuildId, appealGuildId, userId: ban.user.id }, "No appeal server invite is configured or creatable");
+    await sendAppealOpsNotice(
+      client,
+      env,
+      new EmbedBuilder()
+        .setColor(0xffa500)
+        .setTitle("Ban Appeal Invite Missing")
+        .setDescription("A user was banned, but bot7108 could not send an appeal-server invite.")
+        .addFields(
+          { name: "User", value: `${ban.user.tag} (${ban.user.id})` },
+          { name: "Main Server", value: `${ban.guild.name} (${mainGuildId})` },
+          { name: "Fix", value: "Set `APPEAL_SERVER_INVITE` or give bot7108 Create Instant Invite in the appeal server." }
+        )
+        .setTimestamp()
+    );
+  }
+
+  const dmDelivered = await dmUser(
     ban.user,
-    `You were banned from ${ban.guild.name}. If you believe this was a mistake, you may join the appeal server here: ${invite}.${permanentText}`,
+    `You were banned from ${ban.guild.name}. If you believe this was a mistake, ${inviteText}${permanentText}`,
     { mainGuildId, appealGuildId, userId: ban.user.id }
   );
+
+  if (!dmDelivered) {
+    await sendAppealOpsNotice(
+      client,
+      env,
+      new EmbedBuilder()
+        .setColor(0xffa500)
+        .setTitle("Ban Appeal DM Failed")
+        .setDescription("A user was banned, but bot7108 could not DM them. Their DMs may be closed.")
+        .addFields(
+          { name: "User", value: `${ban.user.tag} (${ban.user.id})` },
+          { name: "Main Server", value: `${ban.guild.name} (${mainGuildId})` },
+          { name: "Appeal Status", value: statusLabel(record.appealStatus), inline: true },
+          { name: "Permanent", value: record.isPermanentBan ? "Yes" : "No", inline: true }
+        )
+        .setTimestamp()
+    );
+  }
 }
 
 export async function handleAppealServerMemberJoin(member: GuildMember, env: Env): Promise<boolean> {
