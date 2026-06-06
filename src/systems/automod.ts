@@ -5,8 +5,20 @@ import { sendModLog } from "./logging.js";
 const spamBuckets = new Map<string, number[]>();
 const raidBuckets = new Map<string, number[]>();
 
+const DISCORD_INVITE_LINK_REGEX =
+  /(?:https?:\/\/)?(?:www\.)?(?:discord\.gg|discord(?:app)?\.com\/invite)\/[a-z0-9-]+(?:[/?#][^\s]*)?/i;
+
 function hasLink(content: string): boolean {
   return /https?:\/\//i.test(content);
+}
+
+export function containsDiscordInviteLink(content: string): boolean {
+  return DISCORD_INVITE_LINK_REGEX.test(content);
+}
+
+export function canPostDiscordInviteLink(authorId: string, guildOwnerId: string, configuredOwnerId?: string): boolean {
+  const ownerId = configuredOwnerId?.trim();
+  return authorId === (ownerId || guildOwnerId);
 }
 
 function hasExcessiveCaps(content: string, maxCapsRatio: number): boolean {
@@ -48,12 +60,25 @@ function isRaidSpike(guildId: string): boolean {
 }
 
 export async function runAutomod(message: Message, settings: GuildSettingsShape): Promise<void> {
-  if (!message.guild || !settings.modules.moderation || !settings.automod.enabled || message.member?.permissions.has("Administrator")) {
+  if (!message.guild || !settings.modules.moderation || !settings.automod.enabled) {
     return;
   }
 
   const content = message.content;
   let violation: string | null = null;
+  const botOwnerId = process.env.BOT_OWNER_ID;
+
+  if (
+    settings.automod.discordInviteFilter &&
+    containsDiscordInviteLink(content) &&
+    !canPostDiscordInviteLink(message.author.id, message.guild.ownerId, botOwnerId)
+  ) {
+    violation = "Discord invite link blocked";
+  }
+
+  if (!violation && message.member?.permissions.has("Administrator")) {
+    return;
+  }
 
   if (settings.automod.antiSpam) {
     const spamming = isSpamming(

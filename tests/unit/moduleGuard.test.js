@@ -21,6 +21,7 @@ const settings = {
         enabled: true,
         antiSpam: true,
         antiRaid: true,
+        discordInviteFilter: true,
         linkFilter: false,
         capsFilter: true,
         blacklist: [],

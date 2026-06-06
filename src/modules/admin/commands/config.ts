@@ -79,6 +79,7 @@ const command: CommandDefinition = {
             .setRequired(true)
             .addChoices(
               { name: "enabled", value: "enabled" },
+              { name: "discordInviteFilter", value: "discordInviteFilter" },
               { name: "linkFilter", value: "linkFilter" },
               { name: "capsFilter", value: "capsFilter" },
               { name: "antiSpam", value: "antiSpam" },

@@ -30,6 +30,7 @@ export const DEFAULT_AUTOMOD: AutoModSettings = {
   enabled: true,
   antiSpam: true,
   antiRaid: true,
+  discordInviteFilter: true,
   linkFilter: false,
   capsFilter: true,
   blacklist: [],

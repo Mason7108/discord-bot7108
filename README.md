@@ -64,6 +64,7 @@ Optional:
 
 - `DEV_GUILD_ID` (guild-scoped slash sync in development)
 - `API_PORT`
+- `BOT_OWNER_ID` (user allowed to post Discord invite links; falls back to the Discord server owner if unset)
 - `AI_API_KEY`
 - `YOUTUBE_COOKIES_BASE64` (recommended) or `YOUTUBE_COOKIES`/`YOUTUBE_COOKIES_JSON` (optional YouTube cookie JSON array for music playback when YouTube blocks anonymous server playback)
 - `YTDLP_PROXY` or `YOUTUBE_PROXY` (optional proxy URL for YouTube extraction if Railway's IP is blocked)
@@ -102,7 +103,8 @@ Token/port compatibility:
 ## Command Highlights
 
 - Admin: `/help`, `/config`, `/modules`
-- Moderation: `/kick /ban /unban /timeout /untimeout /mute /unmute /warn /warnlist /purge /slowmode /lock /unlock`
+- Moderation: `/kick /ban /unban /timeout /untimeout /mute /unmute /warn /warnlist /purge /slowmode /lock /unlock /commandrestrict`
+- AutoMod blocks Discord invite links by default unless the sender is `BOT_OWNER_ID` or, when unset, the Discord server owner. Toggle with `/config automod setting:discordInviteFilter value:false`.
 - Tickets: `/ticket setup|close|add|remove|syncmods|modaccess` + in-ticket buttons (`Close`, `Close With Reason`, `Claim`)
 - Economy: `/balance /daily /work /pay /shop /inventory /gamble /coinflip /eco-leaderboard`
 - Leveling: `/level /rank /leaderboard /setlevelrole`

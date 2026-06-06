@@ -1,6 +1,6 @@
 import { DEFAULT_AUTOMOD, DEFAULT_MODULE_STATE, DEFAULT_ROLE_POLICY, MODULE_NAMES } from "../constants.js";
 import { GuildSettingsModel } from "../../models/GuildSettings.js";
-import type { GuildSettingsShape, ModuleName } from "../types.js";
+import type { AutoModSettings, GuildSettingsShape, ModuleName } from "../types.js";
 
 function normalizeModules(raw: Partial<Record<ModuleName, boolean>> | undefined): Record<ModuleName, boolean> {
   const result: Record<ModuleName, boolean> = { ...DEFAULT_MODULE_STATE };
@@ -18,6 +18,14 @@ function normalizeModules(raw: Partial<Record<ModuleName, boolean>> | undefined)
   return result;
 }
 
+function normalizeAutomod(raw: Partial<AutoModSettings> | undefined): AutoModSettings {
+  return {
+    ...DEFAULT_AUTOMOD,
+    ...raw,
+    blacklist: Array.isArray(raw?.blacklist) ? raw.blacklist : DEFAULT_AUTOMOD.blacklist
+  };
+}
+
 export async function getGuildSettings(guildId: string): Promise<GuildSettingsShape> {
   const existing = await GuildSettingsModel.findOne({ guildId }).lean<GuildSettingsShape | null>();
 
@@ -25,6 +33,7 @@ export async function getGuildSettings(guildId: string): Promise<GuildSettingsSh
     return {
       ...existing,
       modules: normalizeModules(existing.modules),
+      automod: normalizeAutomod(existing.automod),
       gamblingEnabled: existing.gamblingEnabled ?? true
     };
   }
@@ -40,7 +49,7 @@ export async function getGuildSettings(guildId: string): Promise<GuildSettingsSh
     guildId: created.guildId,
     modules: normalizeModules(created.modules),
     modLogChannelId: created.modLogChannelId,
-    automod: created.automod,
+    automod: normalizeAutomod(created.automod),
     ticketCategoryId: created.ticketCategoryId,
     ticketHistoryChannelId: created.ticketHistoryChannelId,
     staffRoleIds: created.staffRoleIds,
@@ -71,6 +80,7 @@ export async function updateGuildSettings(
   return {
     ...updated,
     modules: normalizeModules(updated.modules),
+    automod: normalizeAutomod(updated.automod),
     gamblingEnabled: updated.gamblingEnabled ?? true
   };
 }

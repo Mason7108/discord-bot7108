@@ -4,6 +4,7 @@ import type { EventDefinition } from "../core/types.js";
 import { checkAndSetCooldown } from "../core/guards/cooldownGuard.js";
 import { isModuleEnabled } from "../core/guards/moduleGuard.js";
 import { hasPermissionForCommand } from "../core/guards/permissionGuard.js";
+import { getActiveCommandRestriction } from "../core/services/commandRestrictionService.js";
 import { getGuildSettings } from "../core/services/guildSettingsService.js";
 import { hasAcceptedTerms, TERMS_REQUIRED_MESSAGE } from "../core/services/termsAgreementService.js";
 import { handleGiveawayJoin } from "../systems/giveaways.js";
@@ -23,6 +24,97 @@ import { logger } from "../utils/logger.js";
 import { msToHuman } from "../utils/time.js";
 
 const env = loadEnv();
+
+function isProtectedCommandUser(interaction: any): boolean {
+  const userId = typeof interaction.user?.id === "string" ? interaction.user.id : undefined;
+  const botOwnerId = env.BOT_OWNER_ID?.trim();
+
+  if (!userId) {
+    return false;
+  }
+
+  return userId === botOwnerId || userId === interaction.guild?.ownerId;
+}
+
+function formatDiscordTimestamp(date: Date, style: "F" | "R"): string {
+  return `<t:${Math.floor(date.getTime() / 1_000)}:${style}>`;
+}
+
+function resolveTimeoutUntil(member: any): Date | null {
+  if (member?.communicationDisabledUntil instanceof Date && member.communicationDisabledUntil.getTime() > Date.now()) {
+    return member.communicationDisabledUntil;
+  }
+
+  if (typeof member?.communicationDisabledUntilTimestamp === "number" && member.communicationDisabledUntilTimestamp > Date.now()) {
+    return new Date(member.communicationDisabledUntilTimestamp);
+  }
+
+  if (typeof member?.communication_disabled_until === "string") {
+    const parsed = new Date(member.communication_disabled_until);
+    return parsed.getTime() > Date.now() ? parsed : null;
+  }
+
+  return null;
+}
+
+async function denyCommandAccess(interaction: any, description: string): Promise<void> {
+  if (interaction.isAutocomplete?.()) {
+    await interaction.respond([]).catch((error: unknown) => {
+      logger.warn({ err: error }, "Failed to deny restricted autocomplete");
+    });
+    return;
+  }
+
+  const payload = { embeds: [warningEmbed("Commands Disabled", description)], ephemeral: true };
+
+  if (interaction.deferred || interaction.replied) {
+    await interaction.followUp(payload);
+  } else {
+    await interaction.reply(payload);
+  }
+}
+
+async function ensureCommandAccess(interaction: any): Promise<boolean> {
+  const guildId = typeof interaction.guildId === "string" ? interaction.guildId : undefined;
+  const userId = typeof interaction.user?.id === "string" ? interaction.user.id : undefined;
+
+  if (!guildId || !userId || isProtectedCommandUser(interaction)) {
+    return true;
+  }
+
+  const timeoutUntil = resolveTimeoutUntil(interaction.member);
+
+  if (timeoutUntil) {
+    await denyCommandAccess(
+      interaction,
+      `You cannot use bot7108 commands while you are timed out. Your timeout ends ${formatDiscordTimestamp(
+        timeoutUntil,
+        "F"
+      )} (${formatDiscordTimestamp(timeoutUntil, "R")}).`
+    );
+    return false;
+  }
+
+  let restriction: Awaited<ReturnType<typeof getActiveCommandRestriction>>;
+  try {
+    restriction = await getActiveCommandRestriction(guildId, userId);
+  } catch (error) {
+    logger.error({ err: error, guildId, userId }, "Failed to check command restriction");
+    await denyCommandAccess(interaction, "I could not verify your bot7108 command access. Try again later.");
+    return false;
+  }
+
+  if (!restriction) {
+    return true;
+  }
+
+  const until = restriction.expiresAt
+    ? `Restriction ends ${formatDiscordTimestamp(restriction.expiresAt, "F")} (${formatDiscordTimestamp(restriction.expiresAt, "R")}).`
+    : "An admin must remove this restriction.";
+
+  await denyCommandAccess(interaction, `Your access to bot7108 commands is disabled. ${until}\nReason: ${restriction.reason}`);
+  return false;
+}
 
 async function ensureTermsAccepted(interaction: any): Promise<boolean> {
   const guildId = typeof interaction.guildId === "string" ? interaction.guildId : undefined;
@@ -73,6 +165,10 @@ const event: EventDefinition = {
 
     if (interaction.isAutocomplete()) {
       if (!(await ensureTermsAccepted(interaction))) {
+        return;
+      }
+
+      if (!(await ensureCommandAccess(interaction))) {
         return;
       }
 
@@ -165,6 +261,10 @@ const event: EventDefinition = {
     }
 
     if (!(await ensureTermsAccepted(interaction))) {
+      return;
+    }
+
+    if (!(await ensureCommandAccess(interaction))) {
       return;
     }
 

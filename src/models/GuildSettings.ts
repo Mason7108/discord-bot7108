@@ -32,6 +32,7 @@ const guildSettingsSchema = new Schema<GuildSettingsDocument>(
       enabled: { type: Boolean, default: DEFAULT_AUTOMOD.enabled },
       antiSpam: { type: Boolean, default: DEFAULT_AUTOMOD.antiSpam },
       antiRaid: { type: Boolean, default: DEFAULT_AUTOMOD.antiRaid },
+      discordInviteFilter: { type: Boolean, default: DEFAULT_AUTOMOD.discordInviteFilter },
       linkFilter: { type: Boolean, default: DEFAULT_AUTOMOD.linkFilter },
       capsFilter: { type: Boolean, default: DEFAULT_AUTOMOD.capsFilter },
       blacklist: { type: [String], default: DEFAULT_AUTOMOD.blacklist },

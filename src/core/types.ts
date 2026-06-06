@@ -28,6 +28,7 @@ export interface AutoModSettings {
   enabled: boolean;
   antiSpam: boolean;
   antiRaid: boolean;
+  discordInviteFilter: boolean;
   linkFilter: boolean;
   capsFilter: boolean;
   blacklist: string[];
@@ -110,6 +111,15 @@ export interface ReminderShape {
   text: string;
   dueAt: Date;
   delivered: boolean;
+}
+
+export interface CommandRestrictionShape {
+  guildId: string;
+  userId: string;
+  restrictedById: string;
+  reason: string;
+  restrictedAt: Date;
+  expiresAt?: Date;
 }
 
 export interface CommandContext {
