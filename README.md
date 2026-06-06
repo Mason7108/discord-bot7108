@@ -65,6 +65,11 @@ Optional:
 - `DEV_GUILD_ID` (guild-scoped slash sync in development)
 - `API_PORT`
 - `BOT_OWNER_ID` (user allowed to post Discord invite links; falls back to the Discord server owner if unset)
+- `MAIN_GUILD_ID` (main server where bans are detected; falls back to `GUILD_ID` if unset)
+- `APPEAL_GUILD_ID` (appeal server; defaults to `1490191877960503457`)
+- `APPEAL_REVIEW_CHANNEL_ID` (staff-only channel where submitted appeals are posted)
+- `BANNED_USER_ROLE_ID` (optional appeal-server role assigned to users with ban records; otherwise the bot looks for a `Banned User` role)
+- `APPEAL_SERVER_INVITE` (recommended permanent invite sent by DM after bans; if unset, the bot tries to create one)
 - `AI_API_KEY`
 - `YOUTUBE_COOKIES_BASE64` (recommended) or `YOUTUBE_COOKIES`/`YOUTUBE_COOKIES_JSON` (optional YouTube cookie JSON array for music playback when YouTube blocks anonymous server playback)
 - `YTDLP_PROXY` or `YOUTUBE_PROXY` (optional proxy URL for YouTube extraction if Railway's IP is blocked)
@@ -103,7 +108,7 @@ Token/port compatibility:
 ## Command Highlights
 
 - Admin: `/help`, `/config`, `/modules`
-- Moderation: `/kick /ban /unban /timeout /untimeout /mute /unmute /warn /warnlist /purge /slowmode /lock /unlock /commandrestrict`
+- Moderation: `/kick /ban /unban /timeout /untimeout /mute /unmute /warn /warnlist /purge /slowmode /lock /unlock /commandrestrict /appeal /banstatus /setpermban /reviewappeal`
 - AutoMod blocks Discord invite links by default unless the sender is `BOT_OWNER_ID` or, when unset, the Discord server owner. Toggle with `/config automod setting:discordInviteFilter value:false`.
 - Tickets: `/ticket setup|close|add|remove|syncmods|modaccess` + in-ticket buttons (`Close`, `Close With Reason`, `Claim`)
 - Economy: `/balance /daily /work /pay /shop /inventory /gamble /coinflip /eco-leaderboard`
@@ -185,6 +190,10 @@ https://your-app.up.railway.app/auth/discord/callback
 ## Notes
 
 - Music commands are enabled by default for new guilds. For existing guild records where music was previously disabled, enable with `/modules enable module:music`.
+- Ban appeals use a DM invite flow. Discord bots cannot force-add banned users to the appeal server unless the user completed OAuth2 with `guilds.join` and the bot has a valid user access token.
+- Appeal setup: put `MAIN_GUILD_ID`, `APPEAL_GUILD_ID=1490191877960503457`, `APPEAL_REVIEW_CHANNEL_ID`, `BANNED_USER_ROLE_ID` if you use a fixed appeal-server role, and `APPEAL_SERVER_INVITE` in `.env` locally or Railway environment variables in production.
+- Required bot permissions: main server `View Audit Log` for moderator/reason lookup, `Send Messages`, and normal moderation event access; appeal server `Manage Roles`, `Send Messages`, and `Create Instant Invite` only if `APPEAL_SERVER_INVITE` is not configured.
+- Required intents: `Guilds`, `GuildMembers`, `GuildModeration`, and message/interaction intents already configured by the bot.
 - `askai` is scaffolded and intentionally guarded behind `AI_API_KEY`.
 - Dashboard auth/OAuth is scaffold-only and must be hardened before production.
 - Ticket history channel can be configured with `/config tickethistory channel:#your-channel`.

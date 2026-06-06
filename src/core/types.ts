@@ -122,6 +122,35 @@ export interface CommandRestrictionShape {
   expiresAt?: Date;
 }
 
+export type AppealStatus = "locked" | "not_submitted" | "submitted" | "approved" | "denied";
+
+export interface AppealAnswers {
+  bannedReason: string;
+  unbanReason: string;
+  futureChanges: string;
+}
+
+export interface BanAppealRecordShape {
+  userId: string;
+  username?: string;
+  userTag?: string;
+  mainGuildId: string;
+  appealGuildId: string;
+  bannedAt: Date;
+  bannedById?: string;
+  banReason?: string;
+  isPermanentBan: boolean;
+  appealStatus: AppealStatus;
+  appealText?: string;
+  appealAnswers?: AppealAnswers;
+  appealSubmittedAt?: Date;
+  reviewChannelId?: string;
+  reviewMessageId?: string;
+  reviewedById?: string;
+  reviewReason?: string;
+  reviewedAt?: Date;
+}
+
 export interface CommandContext {
   client: BotClient;
   interaction: ChatInputCommandInteraction;

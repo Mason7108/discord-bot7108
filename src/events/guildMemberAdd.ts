@@ -3,6 +3,7 @@ import { loadEnv } from "../config/env.js";
 import type { EventDefinition } from "../core/types.js";
 import { UserProfileModel } from "../models/UserProfile.js";
 import { getGuildSettings } from "../core/services/guildSettingsService.js";
+import { handleAppealServerMemberJoin } from "../systems/banAppeals.js";
 import { logInviteUsedByMemberJoin } from "../systems/inviteLogs.js";
 import { sendModLog } from "../systems/logging.js";
 import { sendWelcomeMessage } from "../systems/welcome.js";
@@ -74,6 +75,10 @@ const event: EventDefinition = {
     }
 
     if (!member.user || member.user.bot) {
+      return;
+    }
+
+    if (await handleAppealServerMemberJoin(member, env)) {
       return;
     }
 

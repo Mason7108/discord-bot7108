@@ -7,6 +7,12 @@ import { hasPermissionForCommand } from "../core/guards/permissionGuard.js";
 import { getActiveCommandRestriction } from "../core/services/commandRestrictionService.js";
 import { getGuildSettings } from "../core/services/guildSettingsService.js";
 import { hasAcceptedTerms, TERMS_REQUIRED_MESSAGE } from "../core/services/termsAgreementService.js";
+import {
+  handleAppealModalSubmit,
+  handleAppealReviewButton,
+  isAppealModalSubmit,
+  isAppealReviewButton
+} from "../systems/banAppeals.js";
 import { handleGiveawayJoin } from "../systems/giveaways.js";
 import { handleInviteGeneratorButton, isInviteGeneratorButton } from "../systems/inviteGenerator.js";
 import {
@@ -201,6 +207,11 @@ const event: EventDefinition = {
 
       const settings = await getGuildSettings(interaction.guildId);
 
+      if (isAppealReviewButton(interaction.customId)) {
+        await handleAppealReviewButton(interaction, env, settings);
+        return;
+      }
+
       if (interaction.customId === TICKET_CREATE_BUTTON_ID) {
         await handleTicketCreateButton(interaction, settings);
         return;
@@ -236,6 +247,11 @@ const event: EventDefinition = {
       if (isTicketCloseReasonModal(interaction.customId)) {
         const settings = await getGuildSettings(interaction.guildId);
         await handleTicketCloseReasonModal(interaction, settings);
+        return;
+      }
+
+      if (isAppealModalSubmit(interaction.customId)) {
+        await handleAppealModalSubmit(interaction, env);
       }
 
       return;
