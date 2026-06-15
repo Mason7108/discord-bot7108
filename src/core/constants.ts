@@ -1,4 +1,4 @@
-import type { AutoModSettings, ModuleName, RolePolicy } from "./types.js";
+import type { AutoModSettings, ModuleName, RolePolicy, VoiceCommandSettings } from "./types.js";
 
 export const MODULE_NAMES: ModuleName[] = [
   "moderation",
@@ -43,6 +43,10 @@ export const DEFAULT_ROLE_POLICY: RolePolicy = {
   adminRoleIds: [],
   moderatorRoleIds: [],
   helperRoleIds: []
+};
+
+export const DEFAULT_VOICE_COMMANDS: VoiceCommandSettings = {
+  enabled: false
 };
 
 export const XP_COOLDOWN_MS = 15_000;

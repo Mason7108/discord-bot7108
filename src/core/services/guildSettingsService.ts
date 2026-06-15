@@ -1,6 +1,6 @@
-import { DEFAULT_AUTOMOD, DEFAULT_MODULE_STATE, DEFAULT_ROLE_POLICY, MODULE_NAMES } from "../constants.js";
+import { DEFAULT_AUTOMOD, DEFAULT_MODULE_STATE, DEFAULT_ROLE_POLICY, DEFAULT_VOICE_COMMANDS, MODULE_NAMES } from "../constants.js";
 import { GuildSettingsModel } from "../../models/GuildSettings.js";
-import type { AutoModSettings, GuildSettingsShape, ModuleName } from "../types.js";
+import type { AutoModSettings, GuildSettingsShape, ModuleName, VoiceCommandSettings } from "../types.js";
 
 function normalizeModules(raw: Partial<Record<ModuleName, boolean>> | undefined): Record<ModuleName, boolean> {
   const result: Record<ModuleName, boolean> = { ...DEFAULT_MODULE_STATE };
@@ -26,6 +26,14 @@ function normalizeAutomod(raw: Partial<AutoModSettings> | undefined): AutoModSet
   };
 }
 
+function normalizeVoiceCommands(raw: Partial<VoiceCommandSettings> | undefined): VoiceCommandSettings {
+  return {
+    ...DEFAULT_VOICE_COMMANDS,
+    ...raw,
+    enabled: raw?.enabled ?? DEFAULT_VOICE_COMMANDS.enabled
+  };
+}
+
 export async function getGuildSettings(guildId: string): Promise<GuildSettingsShape> {
   const existing = await GuildSettingsModel.findOne({ guildId }).lean<GuildSettingsShape | null>();
 
@@ -34,7 +42,8 @@ export async function getGuildSettings(guildId: string): Promise<GuildSettingsSh
       ...existing,
       modules: normalizeModules(existing.modules),
       automod: normalizeAutomod(existing.automod),
-      gamblingEnabled: existing.gamblingEnabled ?? true
+      gamblingEnabled: existing.gamblingEnabled ?? true,
+      voiceCommands: normalizeVoiceCommands(existing.voiceCommands)
     };
   }
 
@@ -57,6 +66,7 @@ export async function getGuildSettings(guildId: string): Promise<GuildSettingsSh
     economyEnabled: created.economyEnabled,
     gamblingEnabled: created.gamblingEnabled,
     music247Enabled: created.music247Enabled,
+    voiceCommands: normalizeVoiceCommands(created.voiceCommands),
     rolePolicy: created.rolePolicy
   };
 }
@@ -81,6 +91,7 @@ export async function updateGuildSettings(
     ...updated,
     modules: normalizeModules(updated.modules),
     automod: normalizeAutomod(updated.automod),
-    gamblingEnabled: updated.gamblingEnabled ?? true
+    gamblingEnabled: updated.gamblingEnabled ?? true,
+    voiceCommands: normalizeVoiceCommands(updated.voiceCommands)
   };
 }

@@ -43,6 +43,11 @@ export interface RolePolicy {
   helperRoleIds: string[];
 }
 
+export interface VoiceCommandSettings {
+  enabled: boolean;
+  textChannelId?: string;
+}
+
 export interface GuildSettingsShape {
   guildId: string;
   modules: Record<ModuleName, boolean>;
@@ -55,6 +60,7 @@ export interface GuildSettingsShape {
   economyEnabled: boolean;
   gamblingEnabled: boolean;
   music247Enabled: boolean;
+  voiceCommands: VoiceCommandSettings;
   rolePolicy: RolePolicy;
 }
 
