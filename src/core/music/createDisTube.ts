@@ -8,6 +8,8 @@ import { existsSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { CookieAwareYtDlpPlugin } from "./cookieAwareYtDlpPlugin.js";
+import { syncVoiceCommandListener } from "../../features/voiceCommands/listener.js";
+import type { BotClient } from "../types.js";
 import { logger } from "../../utils/logger.js";
 
 type YouTubeCookie = {
@@ -477,6 +479,9 @@ export async function createDisTube(client: Client): Promise<DisTube> {
 
   distube.on(Events.INIT_QUEUE, (queue: Queue) => {
     attachVoiceDebugLogging(queue);
+    void syncVoiceCommandListener(client as BotClient, queue.id).catch((error: unknown) => {
+      logger.warn({ err: error, guildId: queue.id }, "Failed to sync voice command listener after queue init");
+    });
   });
 
   distube.on(Events.PLAY_SONG, (queue: Queue, song: Song) => {

@@ -10,6 +10,7 @@ A greenfield TypeScript Discord bot built with `discord.js v14`, `mongoose`, `ex
 - Ticket system with button-based creation + transcript on close
 - Economy + leveling (Mongo-backed)
 - Music system (DisTube)
+- Spoken music controls with opt-in `/voicecommands`
 - Giveaways with button join and auto winner selection
 - Utility + fun commands
 - Express dashboard API scaffold (`/health`, settings GET/PATCH)
@@ -71,6 +72,13 @@ Optional:
 - `BANNED_USER_ROLE_ID` (optional appeal-server role assigned to users with ban records; otherwise the bot looks for a `Banned User` role)
 - `APPEAL_SERVER_INVITE` (recommended permanent invite sent by DM after bans; if unset, the bot tries to create one)
 - `AI_API_KEY`
+- `OPENAI_API_KEY` or `VOICE_COMMANDS_OPENAI_API_KEY` (required only for `/voicecommands enable`; used for speech-to-text)
+- `VOICE_COMMANDS_STT_MODEL` (optional, default `whisper-1`)
+- `VOICE_COMMANDS_COOLDOWN_SEC` (optional spoken-command cooldown, default `5`)
+- `VOICE_COMMANDS_TRANSCRIPTION_COOLDOWN_SEC` (optional per-user transcription throttle, default `2`)
+- `VOICE_COMMANDS_MAX_AUDIO_SEC` (optional max captured phrase length, default `10`)
+- `VOICE_COMMANDS_SILENCE_MS` (optional silence cutoff for a spoken phrase, default `1200`)
+- `VOICE_COMMANDS_TRANSCRIBE_TIMEOUT_MS` (optional speech-to-text request timeout, default `15000`)
 - `YOUTUBE_COOKIES_BASE64` (recommended) or `YOUTUBE_COOKIES`/`YOUTUBE_COOKIES_JSON` (optional YouTube cookie JSON array for music playback when YouTube blocks anonymous server playback)
 - `YTDLP_PROXY` or `YOUTUBE_PROXY` (optional proxy URL for YouTube extraction if Railway's IP is blocked)
 - `YTDLP_TIMEOUT_MS` (optional, default `15000`)
@@ -113,7 +121,8 @@ Token/port compatibility:
 - Tickets: `/ticket setup|close|add|remove|syncmods|modaccess` + in-ticket buttons (`Close`, `Close With Reason`, `Claim`)
 - Economy: `/balance /daily /work /pay /shop /inventory /gamble /coinflip /eco-leaderboard`
 - Leveling: `/level /rank /leaderboard /setlevelrole`
-- Music: `/play /pause /resume /skip /queue /stop /volume /music247`
+- Music: `/play /pause /resume /skip /queue /stop /leave /volume /music247`
+- Voice commands: `/voicecommands enable|disable|status`
 - Giveaways: `/giveaway start|end|reroll|delete`
 - Utility/Fun: `/ping /serverinfo /userinfo /avatar /poll /remind /math /splitvc /movevc /meme /eightball /joke /roll /trivia /askai`
 
@@ -132,6 +141,31 @@ After a song starts, the bot checks whether Discord voice is actually healthy. I
 If `/volume` reports `No active queue` immediately after `Now playing`, the stream ended before Discord received sustained audio. The bot reports this as a short-finish diagnostic and points to the deploy logs, YouTube cookies, or proxy settings.
 
 Railway installs system `ffmpeg` through both `railpack.json` and `nixpacks.toml`, and the bot prefers an absolute Linux system binary over `ffmpeg-static`. The build runs `ffmpeg -version`; if Railway cannot install FFmpeg, the deploy should fail before the bot starts. If logs still say `ffmpeg is not installed at 'ffmpeg' path`, confirm Railway deployed the latest commit and, if needed, set the Railway service variable `RAILPACK_DEPLOY_APT_PACKAGES=ffmpeg`. If logs show `signal=SIGSEGV` from `/app/node_modules/ffmpeg-static/ffmpeg`, redeploy the latest commit so Railway uses the system package.
+
+## Voice Command Setup
+
+Voice commands are disabled by default per server. A server admin must run `/voicecommands enable` before bot7108 will process spoken commands. Run `/voicecommands disable` to turn them off for that server, and `/voicecommands status` to verify whether recognition is configured and whether the bot is currently listening.
+
+Supported wake-phrase commands:
+
+```text
+hey bot7108 play [song name]
+hey bot7108 pause
+hey bot7108 resume
+hey bot7108 skip
+hey bot7108 stop
+hey bot7108 leave
+```
+
+Speech-to-text requires `VOICE_COMMANDS_OPENAI_API_KEY` or `OPENAI_API_KEY`. If neither is set, `/voicecommands enable` fails with a clear setup error and the listener will not capture voice audio.
+
+Privacy behavior:
+
+- The bot listens only while it is already connected to a voice channel and voice commands are enabled for that server.
+- Short audio snippets are processed only to detect commands starting with `hey bot7108`.
+- Raw audio files are not written to disk. Audio is held in memory only long enough to transcribe the phrase, then discarded.
+- Detected commands are logged with guild ID, user ID, command name, and query for debugging. Non-command speech is not logged as transcript text.
+- Voice commands reuse the normal music command permission checks, module checks, command restrictions, terms gating, and cooldowns.
 
 ## Verification Flow
 

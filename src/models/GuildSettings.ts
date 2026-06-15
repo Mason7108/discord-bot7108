@@ -47,6 +47,10 @@ const guildSettingsSchema = new Schema<GuildSettingsDocument>(
     economyEnabled: { type: Boolean, default: true },
     gamblingEnabled: { type: Boolean, default: true },
     music247Enabled: { type: Boolean, default: false },
+    voiceCommands: {
+      enabled: { type: Boolean, default: false },
+      textChannelId: { type: String }
+    },
     rolePolicy: {
       adminRoleIds: { type: [String], default: DEFAULT_ROLE_POLICY.adminRoleIds },
       moderatorRoleIds: { type: [String], default: DEFAULT_ROLE_POLICY.moderatorRoleIds },
