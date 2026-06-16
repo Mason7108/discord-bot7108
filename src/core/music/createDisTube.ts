@@ -3,7 +3,7 @@ import { SpotifyPlugin } from "@distube/spotify";
 import { YouTubePlugin } from "@distube/youtube";
 import { AudioPlayerStatus, VoiceConnectionStatus } from "@discordjs/voice";
 import ffmpegStatic from "ffmpeg-static";
-import { ChannelType, PermissionFlagsBits, type Client, type GuildTextBasedChannel, type VoiceBasedChannel } from "discord.js";
+import { ChannelType, PermissionFlagsBits, type Client, type Guild, type GuildTextBasedChannel, type VoiceBasedChannel } from "discord.js";
 import { existsSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -36,6 +36,12 @@ const playbackWarnings = new Set<string>();
 const playbackStarts = new Map<string, { startedAt: number; songId: string; songUrl?: string; songName?: string }>();
 const recentFfmpegLogs = new Map<string, string[]>();
 const musicIdleDisconnectTimers = new Map<string, NodeJS.Timeout>();
+
+type MusicIdleContext = {
+  guildId: string;
+  voiceChannelId?: string;
+  textChannelId?: string;
+};
 
 function createFfmpegInputArgs(): Record<string, string> {
   const userAgent = process.env.FFMPEG_USER_AGENT || process.env.YTDLP_USER_AGENT || DEFAULT_FFMPEG_USER_AGENT;
@@ -345,22 +351,27 @@ function canSendIdleNotice(channel: GuildTextBasedChannel): boolean {
   return Boolean(permissions?.has(PermissionFlagsBits.SendMessages));
 }
 
-function resolveIdleNoticeChannel(queue: Queue, voiceChannel: VoiceBasedChannel): GuildTextBasedChannel | null {
+function resolveIdleNoticeChannel(
+  guild: Guild,
+  voiceChannel: VoiceBasedChannel,
+  fallbackTextChannelId?: string
+): GuildTextBasedChannel | null {
   if (voiceChannel.isTextBased() && canSendIdleNotice(voiceChannel as GuildTextBasedChannel)) {
     return voiceChannel as GuildTextBasedChannel;
   }
 
-  if (queue.textChannel && canSendIdleNotice(queue.textChannel)) {
-    return queue.textChannel;
+  const fallbackChannel = fallbackTextChannelId ? guild.channels.cache.get(fallbackTextChannelId) : null;
+  if (fallbackChannel?.isTextBased() && !fallbackChannel.isDMBased() && canSendIdleNotice(fallbackChannel)) {
+    return fallbackChannel;
   }
 
   return null;
 }
 
-async function sendIdleDisconnectNotice(queue: Queue, voiceChannel: VoiceBasedChannel): Promise<void> {
-  const noticeChannel = resolveIdleNoticeChannel(queue, voiceChannel);
+async function sendIdleDisconnectNotice(guild: Guild, voiceChannel: VoiceBasedChannel, textChannelId?: string): Promise<void> {
+  const noticeChannel = resolveIdleNoticeChannel(guild, voiceChannel, textChannelId);
   if (!noticeChannel) {
-    logger.warn({ guildId: queue.id, voiceChannelId: voiceChannel.id }, "Could not send music idle disconnect notice");
+    logger.warn({ guildId: guild.id, voiceChannelId: voiceChannel.id }, "Could not send music idle disconnect notice");
     return;
   }
 
@@ -370,36 +381,51 @@ async function sendIdleDisconnectNotice(queue: Queue, voiceChannel: VoiceBasedCh
     })
     .catch((error: unknown) => {
       logger.warn(
-        { err: error, guildId: queue.id, channelId: noticeChannel.id },
+        { err: error, guildId: guild.id, channelId: noticeChannel.id },
         "Failed to send music idle disconnect notice"
       );
     });
 }
 
+function createMusicIdleContext(queue: Queue): MusicIdleContext {
+  return {
+    guildId: queue.id,
+    voiceChannelId: queue.clientMember?.voice.channelId ?? queue.voiceChannel?.id,
+    textChannelId: queue.textChannel?.id
+  };
+}
+
 function scheduleMusicIdleDisconnect(distube: DisTube, queue: Queue): void {
-  clearMusicIdleDisconnect(queue.id);
+  const context = createMusicIdleContext(queue);
+
+  if (!context.voiceChannelId) {
+    logger.warn({ guildId: context.guildId }, "Skipping music idle disconnect because no voice channel was captured");
+    return;
+  }
+
+  clearMusicIdleDisconnect(context.guildId);
 
   const timer = setTimeout(() => {
-    void disconnectIfMusicIdle(distube, queue);
+    void disconnectIfMusicIdle(distube, context);
   }, MUSIC_IDLE_DISCONNECT_MS);
 
   timer.unref();
-  musicIdleDisconnectTimers.set(queue.id, timer);
+  musicIdleDisconnectTimers.set(context.guildId, timer);
 }
 
-async function disconnectIfMusicIdle(distube: DisTube, queue: Queue): Promise<void> {
-  clearMusicIdleDisconnect(queue.id);
+async function disconnectIfMusicIdle(distube: DisTube, context: MusicIdleContext): Promise<void> {
+  clearMusicIdleDisconnect(context.guildId);
 
-  const activeQueue = distube.getQueue(queue.id);
+  const activeQueue = distube.getQueue(context.guildId);
   if (activeQueue?.songs.length) {
     return;
   }
 
   let settings: Awaited<ReturnType<typeof getGuildSettings>>;
   try {
-    settings = await getGuildSettings(queue.id);
+    settings = await getGuildSettings(context.guildId);
   } catch (error) {
-    logger.warn({ err: error, guildId: queue.id }, "Skipping music idle disconnect because settings could not be loaded");
+    logger.warn({ err: error, guildId: context.guildId }, "Skipping music idle disconnect because settings could not be loaded");
     return;
   }
 
@@ -407,14 +433,20 @@ async function disconnectIfMusicIdle(distube: DisTube, queue: Queue): Promise<vo
     return;
   }
 
-  const voiceChannel = queue.clientMember?.voice.channel ?? queue.voiceChannel;
-  if (!voiceChannel) {
+  const guild = distube.client.guilds.cache.get(context.guildId);
+  if (!guild) {
+    logger.warn({ guildId: context.guildId }, "Skipping music idle disconnect because guild was not cached");
     return;
   }
 
-  await sendIdleDisconnectNotice(queue, voiceChannel);
-  distube.voices.leave(queue.id);
-  logger.info({ guildId: queue.id, voiceChannelId: voiceChannel.id }, "Disconnected from idle music voice channel");
+  const currentVoiceChannel = guild.members.me?.voice.channel;
+  if (!currentVoiceChannel || currentVoiceChannel.id !== context.voiceChannelId) {
+    return;
+  }
+
+  await sendIdleDisconnectNotice(guild, currentVoiceChannel, context.textChannelId);
+  distube.voices.leave(context.guildId);
+  logger.info({ guildId: context.guildId, voiceChannelId: currentVoiceChannel.id }, "Disconnected from idle music voice channel");
 }
 
 function schedulePlaybackHealthCheck(queue: Queue, song: Song): void {
