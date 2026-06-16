@@ -366,7 +366,7 @@ async function sendIdleDisconnectNotice(queue: Queue, voiceChannel: VoiceBasedCh
 
   await noticeChannel
     .send({
-      content: "No music was detected after 2 minutes, so I disconnected. To play music, use `/play`."
+      content: "No music detected after 2 minutes. bot7108 is now leaving. To play music again, use `/play`."
     })
     .catch((error: unknown) => {
       logger.warn(
