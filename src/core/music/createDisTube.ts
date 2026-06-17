@@ -32,10 +32,12 @@ const DEFAULT_FFMPEG_REFERER = "https://www.youtube.com/";
 const PLAYBACK_HEALTH_CHECK_DELAY_MS = 7_000;
 const PLAYBACK_SHORT_FINISH_MS = 10_000;
 const MUSIC_IDLE_DISCONNECT_MS = 2 * 60 * 1_000;
+const MUSIC_IDLE_SWEEP_MS = 15_000;
 const playbackWarnings = new Set<string>();
 const playbackStarts = new Map<string, { startedAt: number; songId: string; songUrl?: string; songName?: string }>();
 const recentFfmpegLogs = new Map<string, string[]>();
 const musicIdleDisconnectTimers = new Map<string, NodeJS.Timeout>();
+const musicIdleContexts = new Map<string, MusicIdleContext>();
 
 type MusicIdleContext = {
   guildId: string;
@@ -344,6 +346,22 @@ function clearMusicIdleDisconnect(guildId: string): void {
   musicIdleDisconnectTimers.delete(guildId);
 }
 
+function rememberMusicIdleContext(context: MusicIdleContext): void {
+  if (!context.voiceChannelId && !context.textChannelId) {
+    return;
+  }
+
+  musicIdleContexts.set(context.guildId, {
+    ...musicIdleContexts.get(context.guildId),
+    ...context
+  });
+}
+
+function clearMusicIdleTracking(guildId: string): void {
+  clearMusicIdleDisconnect(guildId);
+  musicIdleContexts.delete(guildId);
+}
+
 function canSendIdleNotice(channel: GuildTextBasedChannel): boolean {
   const botMember = channel.guild.members.me;
   const permissions = botMember ? channel.permissionsFor(botMember) : null;
@@ -397,7 +415,12 @@ function createMusicIdleContext(queue: Queue): MusicIdleContext {
 
 function scheduleMusicIdleDisconnect(distube: DisTube, queue: Queue): void {
   const context = createMusicIdleContext(queue);
+  rememberMusicIdleContext(context);
 
+  scheduleMusicIdleDisconnectFromContext(distube, context);
+}
+
+function scheduleMusicIdleDisconnectFromContext(distube: DisTube, context: MusicIdleContext): void {
   if (!context.voiceChannelId) {
     logger.warn({ guildId: context.guildId }, "Skipping music idle disconnect because no voice channel was captured");
     return;
@@ -413,11 +436,58 @@ function scheduleMusicIdleDisconnect(distube: DisTube, queue: Queue): void {
   musicIdleDisconnectTimers.set(context.guildId, timer);
 }
 
+function queueHasActiveMusic(queue: Queue | undefined): boolean {
+  if (!queue) {
+    return false;
+  }
+
+  const playerStatus = queue.voice.audioPlayer.state.status;
+  return queue.songs.length > 0 || playerStatus === AudioPlayerStatus.Playing || playerStatus === AudioPlayerStatus.Buffering;
+}
+
+function sweepMusicIdleVoiceConnections(distube: DisTube): void {
+  for (const guild of distube.client.guilds.cache.values()) {
+    const voiceChannel = guild.members.me?.voice.channel;
+
+    if (!voiceChannel) {
+      clearMusicIdleTracking(guild.id);
+      continue;
+    }
+
+    const queue = distube.getQueue(guild.id);
+    if (queueHasActiveMusic(queue)) {
+      clearMusicIdleDisconnect(guild.id);
+      rememberMusicIdleContext(createMusicIdleContext(queue as Queue));
+      continue;
+    }
+
+    if (musicIdleDisconnectTimers.has(guild.id)) {
+      continue;
+    }
+
+    const context = {
+      guildId: guild.id,
+      voiceChannelId: voiceChannel.id,
+      textChannelId: musicIdleContexts.get(guild.id)?.textChannelId
+    };
+    rememberMusicIdleContext(context);
+    scheduleMusicIdleDisconnectFromContext(distube, context);
+  }
+}
+
+function startMusicIdleSweep(distube: DisTube): void {
+  const timer = setInterval(() => {
+    sweepMusicIdleVoiceConnections(distube);
+  }, MUSIC_IDLE_SWEEP_MS);
+
+  timer.unref();
+}
+
 async function disconnectIfMusicIdle(distube: DisTube, context: MusicIdleContext): Promise<void> {
   clearMusicIdleDisconnect(context.guildId);
 
   const activeQueue = distube.getQueue(context.guildId);
-  if (activeQueue?.songs.length) {
+  if (queueHasActiveMusic(activeQueue)) {
     return;
   }
 
@@ -446,6 +516,7 @@ async function disconnectIfMusicIdle(distube: DisTube, context: MusicIdleContext
 
   await sendIdleDisconnectNotice(guild, currentVoiceChannel, context.textChannelId);
   distube.voices.leave(context.guildId);
+  clearMusicIdleTracking(context.guildId);
   logger.info({ guildId: context.guildId, voiceChannelId: currentVoiceChannel.id }, "Disconnected from idle music voice channel");
 }
 
@@ -603,6 +674,7 @@ export async function createDisTube(client: Client): Promise<DisTube> {
 
   distube.on(Events.INIT_QUEUE, (queue: Queue) => {
     clearMusicIdleDisconnect(queue.id);
+    rememberMusicIdleContext(createMusicIdleContext(queue));
     attachVoiceDebugLogging(queue);
     void syncVoiceCommandListener(client as BotClient, queue.id).catch((error: unknown) => {
       logger.warn({ err: error, guildId: queue.id }, "Failed to sync voice command listener after queue init");
@@ -611,6 +683,7 @@ export async function createDisTube(client: Client): Promise<DisTube> {
 
   distube.on(Events.PLAY_SONG, (queue: Queue, song: Song) => {
     clearMusicIdleDisconnect(queue.id);
+    rememberMusicIdleContext(createMusicIdleContext(queue));
     void queue.textChannel?.send({
       content: `Now playing: **${song.name}** - \`${song.formattedDuration}\``
     });
@@ -620,6 +693,7 @@ export async function createDisTube(client: Client): Promise<DisTube> {
 
   distube.on(Events.ADD_SONG, (queue: Queue, song: Song) => {
     clearMusicIdleDisconnect(queue.id);
+    rememberMusicIdleContext(createMusicIdleContext(queue));
     void queue.textChannel?.send({ content: `Queued: **${song.name}**` });
   });
 
@@ -644,7 +718,7 @@ export async function createDisTube(client: Client): Promise<DisTube> {
   });
 
   distube.on(Events.DISCONNECT, (queue: Queue) => {
-    clearMusicIdleDisconnect(queue.id);
+    clearMusicIdleTracking(queue.id);
   });
 
   distube.on(Events.FINISH, (queue: Queue) => {
@@ -652,6 +726,7 @@ export async function createDisTube(client: Client): Promise<DisTube> {
   });
 
   logger.info(`DisTube initialized with ffmpegPath=${ffmpegPath}`);
+  startMusicIdleSweep(distube);
 
   return distube;
 }
