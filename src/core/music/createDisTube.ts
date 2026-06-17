@@ -442,7 +442,7 @@ function queueHasActiveMusic(queue: Queue | undefined): boolean {
   }
 
   const playerStatus = queue.voice.audioPlayer.state.status;
-  return queue.songs.length > 0 || playerStatus === AudioPlayerStatus.Playing || playerStatus === AudioPlayerStatus.Buffering;
+  return playerStatus === AudioPlayerStatus.Playing || playerStatus === AudioPlayerStatus.Buffering;
 }
 
 function sweepMusicIdleVoiceConnections(distube: DisTube): void {
