@@ -48,6 +48,7 @@ type MusicIdleContext = {
 function createFfmpegInputArgs(): Record<string, string> {
   const userAgent = process.env.FFMPEG_USER_AGENT || process.env.YTDLP_USER_AGENT || DEFAULT_FFMPEG_USER_AGENT;
   const referer = process.env.FFMPEG_REFERER || DEFAULT_FFMPEG_REFERER;
+  const proxy = process.env.FFMPEG_PROXY || process.env.YTDLP_PROXY || process.env.YOUTUBE_PROXY;
   const headers = [
     `Referer: ${referer}`,
     "Accept: */*",
@@ -56,7 +57,9 @@ function createFfmpegInputArgs(): Record<string, string> {
 
   return {
     user_agent: userAgent,
-    headers: `${headers.join("\r\n")}\r\n`
+    headers: `${headers.join("\r\n")}\r\n`,
+    reconnect_on_http_error: "4xx,5xx",
+    ...(proxy ? { http_proxy: proxy } : {})
   };
 }
 
@@ -228,7 +231,11 @@ function compactDetails(details: Record<string, unknown>): string {
 }
 
 function sanitizeDiagnosticLine(line: string): string {
-  return line.replace(/https?:\/\/\S+/g, "<redacted-url>").slice(0, 500);
+  return line
+    .replace(/(Cookie:\s*)[^\r\n]+/gi, "$1<redacted>")
+    .replace(/(Authorization:\s*)[^\r\n]+/gi, "$1<redacted>")
+    .replace(/https?:\/\/\S+/g, "<redacted-url>")
+    .slice(0, 500);
 }
 
 function getGuildIdFromDisTubeDebug(message: string): string | undefined {
@@ -668,8 +675,9 @@ export async function createDisTube(client: Client): Promise<DisTube> {
   });
 
   distube.on(Events.FFMPEG_DEBUG, (message: string) => {
+    const sanitizedMessage = sanitizeDiagnosticLine(message);
     rememberFfmpegLog(message);
-    logger.debug({ source: "ffmpeg" }, message);
+    logger.debug({ source: "ffmpeg" }, sanitizedMessage);
   });
 
   distube.on(Events.INIT_QUEUE, (queue: Queue) => {
@@ -699,11 +707,13 @@ export async function createDisTube(client: Client): Promise<DisTube> {
 
   distube.on(Events.ERROR, (error: Error, queue: Queue, song?: Song) => {
     const reason = formatDisTubeError(error);
-    logger.error({ err: error, guildId: queue.id, song: song?.name }, "DisTube error");
+    const ffmpegSummary = recentFfmpegSummary(queue.id);
+    const diagnostic = ffmpegSummary ? `\nRecent FFmpeg: ${ffmpegSummary}` : "";
+    logger.error({ err: error, guildId: queue.id, song: song?.name, ffmpegRecent: ffmpegSummary }, "DisTube error");
     forgetPlaybackStart(queue);
 
     void queue.textChannel?.send({
-      content: `Playback error${song?.name ? ` for **${song.name}**` : ""}: ${reason}`
+      content: `Playback error${song?.name ? ` for **${song.name}**` : ""}: ${reason}${diagnostic}`
     });
   });
 

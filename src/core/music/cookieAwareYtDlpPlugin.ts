@@ -17,6 +17,7 @@ type YtDlpFormat = {
   vcodec?: unknown;
   abr?: unknown;
   tbr?: unknown;
+  http_headers?: unknown;
 };
 type SelectedStream = {
   url: string;
@@ -28,6 +29,7 @@ type SelectedStream = {
   vcodec?: string;
   abr?: number;
   tbr?: number;
+  httpHeaders?: Record<string, string>;
 };
 
 const DEFAULT_YTDLP_TIMEOUT_MS = 15_000;
@@ -35,6 +37,7 @@ const DEFAULT_YTDLP_SEARCH_LIMIT = 5;
 const DEFAULT_YTDLP_MAX_CANDIDATES = 3;
 const DEFAULT_YTDLP_USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36";
+const DEFAULT_YOUTUBE_REFERER = "https://www.youtube.com/";
 
 class NoPlayableAudioFormatsError extends Error {
   constructor(hasCookies: boolean) {
@@ -216,7 +219,51 @@ function formatString(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
-function selectedStreamFromFormat(format: YtDlpFormat & { url: string }, source: string): SelectedStream {
+function sanitizeHeaderName(value: string): string {
+  return value.replace(/[\r\n:]/g, "").trim();
+}
+
+function sanitizeHeaderValue(value: unknown): string {
+  return String(value ?? "").replace(/[\r\n]/g, " ").trim();
+}
+
+function normalizeHttpHeaders(value: unknown): Record<string, string> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const headers: Record<string, string> = {};
+
+  for (const [key, rawValue] of Object.entries(value)) {
+    const name = sanitizeHeaderName(key);
+    const headerValue = sanitizeHeaderValue(rawValue);
+    if (!name || !headerValue) {
+      continue;
+    }
+
+    headers[name] = headerValue;
+  }
+
+  return Object.keys(headers).length > 0 ? headers : undefined;
+}
+
+function mergeHttpHeaders(
+  inheritedHeaders: Record<string, string> | undefined,
+  formatHeaders: Record<string, string> | undefined
+): Record<string, string> | undefined {
+  const merged = {
+    ...(inheritedHeaders ?? {}),
+    ...(formatHeaders ?? {})
+  };
+
+  return Object.keys(merged).length > 0 ? merged : undefined;
+}
+
+function selectedStreamFromFormat(
+  format: YtDlpFormat & { url: string },
+  source: string,
+  inheritedHttpHeaders?: Record<string, string>
+): SelectedStream {
   return {
     url: format.url,
     source,
@@ -226,11 +273,16 @@ function selectedStreamFromFormat(format: YtDlpFormat & { url: string }, source:
     acodec: formatString(format.acodec),
     vcodec: formatString(format.vcodec),
     abr: numericValue(format.abr) || undefined,
-    tbr: numericValue(format.tbr) || undefined
+    tbr: numericValue(format.tbr) || undefined,
+    httpHeaders: mergeHttpHeaders(inheritedHttpHeaders, normalizeHttpHeaders(format.http_headers))
   };
 }
 
-function bestAudioStream(formats: unknown, source: string): SelectedStream | undefined {
+function bestAudioStream(
+  formats: unknown,
+  source: string,
+  inheritedHttpHeaders?: Record<string, string>
+): SelectedStream | undefined {
   if (!Array.isArray(formats)) {
     return undefined;
   }
@@ -241,15 +293,92 @@ function bestAudioStream(formats: unknown, source: string): SelectedStream | und
     })
     .sort((left, right) => formatScore(right) - formatScore(left));
 
-  return playableFormats[0] ? selectedStreamFromFormat(playableFormats[0], source) : undefined;
+  return playableFormats[0] ? selectedStreamFromFormat(playableFormats[0], source, inheritedHttpHeaders) : undefined;
 }
 
 function getPlayableStream(info: YtDlpInfo): SelectedStream | undefined {
+  const inheritedHttpHeaders = normalizeHttpHeaders(info.http_headers);
+
   return (
-    bestAudioStream(info.requested_downloads, "requested_downloads") ??
-    bestAudioStream(info.requested_formats, "requested_formats") ??
-    (hasStreamUrl(info) && hasAudio(info) ? selectedStreamFromFormat(info, "info") : undefined) ??
-    bestAudioStream(info.formats, "formats")
+    bestAudioStream(info.requested_downloads, "requested_downloads", inheritedHttpHeaders) ??
+    bestAudioStream(info.requested_formats, "requested_formats", inheritedHttpHeaders) ??
+    (hasStreamUrl(info) && hasAudio(info) ? selectedStreamFromFormat(info, "info", inheritedHttpHeaders) : undefined) ??
+    bestAudioStream(info.formats, "formats", inheritedHttpHeaders)
+  );
+}
+
+function getHeaderValue(headers: Record<string, string> | undefined, name: string): string | undefined {
+  if (!headers) {
+    return undefined;
+  }
+
+  const wanted = name.toLowerCase();
+  const entry = Object.entries(headers).find(([key]) => key.toLowerCase() === wanted);
+  return entry?.[1];
+}
+
+function setHeader(headers: Map<string, string>, name: string, value: string | undefined): void {
+  const sanitizedName = sanitizeHeaderName(name);
+  const sanitizedValue = sanitizeHeaderValue(value);
+
+  if (!sanitizedName || !sanitizedValue) {
+    return;
+  }
+
+  const existingKey = [...headers.keys()].find((key) => key.toLowerCase() === sanitizedName.toLowerCase());
+  headers.set(existingKey ?? sanitizedName, sanitizedValue);
+}
+
+function shouldForwardHeader(name: string): boolean {
+  return !["host", "content-length", "accept-encoding", "range", "user-agent"].includes(name.toLowerCase());
+}
+
+function createFfmpegInputArgsForStream(stream: SelectedStream): Record<string, string | number> {
+  const streamHeaders = stream.httpHeaders;
+  const userAgent = getHeaderValue(streamHeaders, "User-Agent") || getYtDlpUserAgent();
+  const referer = process.env.FFMPEG_REFERER || getHeaderValue(streamHeaders, "Referer") || DEFAULT_YOUTUBE_REFERER;
+  const proxy = process.env.FFMPEG_PROXY || getYtDlpProxy();
+  const headers = new Map<string, string>();
+
+  for (const [name, value] of Object.entries(streamHeaders ?? {})) {
+    if (shouldForwardHeader(name)) {
+      setHeader(headers, name, value);
+    }
+  }
+
+  setHeader(headers, "Referer", referer);
+  setHeader(headers, "Accept", getHeaderValue(streamHeaders, "Accept") || "*/*");
+  setHeader(headers, "Accept-Language", getHeaderValue(streamHeaders, "Accept-Language") || "en-US,en;q=0.9");
+
+  return {
+    user_agent: userAgent,
+    headers: `${[...headers.entries()].map(([name, value]) => `${name}: ${value}`).join("\r\n")}\r\n`,
+    reconnect_on_http_error: "4xx,5xx",
+    ...(proxy ? { http_proxy: proxy } : {})
+  };
+}
+
+function applyFfmpegInputArgsForStream(song: Song, stream: SelectedStream, distube: DisTube): void {
+  const guildId = song.member?.guild.id;
+  const queue = guildId ? distube.getQueue(guildId) : undefined;
+
+  if (!queue) {
+    return;
+  }
+
+  const inputArgs = createFfmpegInputArgsForStream(stream);
+  queue.ffmpegArgs.input = {
+    ...queue.ffmpegArgs.input,
+    ...inputArgs
+  };
+
+  logger.info(
+    `Prepared FFmpeg request headers from yt-dlp stream metadata: ${JSON.stringify({
+      guildId,
+      headerNames: Object.keys(stream.httpHeaders ?? {}),
+      hasProxy: Boolean(inputArgs.http_proxy),
+      userAgentSource: getHeaderValue(stream.httpHeaders, "User-Agent") ? "yt-dlp" : "default"
+    })}`
   );
 }
 
@@ -603,6 +732,10 @@ export class CookieAwareYtDlpPlugin extends PlayableExtractorPlugin {
     }
 
     logSelectedStream(info, stream);
+    const distube = (this as { distube?: DisTube }).distube;
+    if (distube) {
+      applyFfmpegInputArgsForStream(song, stream, distube);
+    }
 
     return stream.url;
   }

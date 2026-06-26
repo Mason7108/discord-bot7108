@@ -65,6 +65,7 @@ const rawEnvSchema = z.object({
   YTDLP_USER_AGENT: z.string().optional(),
   FFMPEG_USER_AGENT: z.string().optional(),
   FFMPEG_REFERER: z.string().optional(),
+  FFMPEG_PROXY: z.string().optional(),
   BOT_OWNER_ID: z.string().optional(),
   MAIN_GUILD_ID: z.string().optional(),
   APPEAL_GUILD_ID: z.string().default("1490191877960503457"),

@@ -87,6 +87,7 @@ Optional:
 - `YTDLP_EXTRACTOR_ARGS` (optional advanced yt-dlp extractor args override)
 - `FFMPEG_USER_AGENT` or `YTDLP_USER_AGENT` (optional media request user-agent override)
 - `FFMPEG_REFERER` (optional media request referer override, defaults to `https://www.youtube.com/`)
+- `FFMPEG_PROXY` (optional proxy URL for FFmpeg media fetches; defaults to `YTDLP_PROXY`/`YOUTUBE_PROXY` when set)
 - `DISCORD_OAUTH_CLIENT_SECRET` (required for the terms agreement submit flow)
 - `AGREEMENT_COOKIE_SECRET` (required for signed agreement/OAuth cookies)
 
@@ -132,9 +133,9 @@ YouTube may block datacenter playback with `Sign in to confirm you're not a bot`
 
 Expected value: base64-encoded JSON cookie array from a browser cookie export tool. Do not paste cookies into code or commit them. If you use raw JSON instead, set `YOUTUBE_COOKIES` or `YOUTUBE_COOKIES_JSON`.
 
-If Railway still receives `Requested format is not available` or `no playable audio formats` after cookies are set, YouTube is likely blocking Railway's host/IP. Set `YTDLP_PROXY` or `YOUTUBE_PROXY` to a proxy URL so `yt-dlp` extracts through a less-blocked network. The bot also supports `YTDLP_TIMEOUT_MS`, `YTDLP_SEARCH_LIMIT`, and `YTDLP_MAX_CANDIDATES` to keep failed lookups from hanging too long.
+If Railway still receives `Requested format is not available` or `no playable audio formats` after cookies are set, YouTube is likely blocking Railway's host/IP. Set `YTDLP_PROXY` or `YOUTUBE_PROXY` to a proxy URL so `yt-dlp` extracts through a less-blocked network. FFmpeg will also use that proxy for the final media fetch; set `FFMPEG_PROXY` only if FFmpeg needs a different proxy URL. The bot also supports `YTDLP_TIMEOUT_MS`, `YTDLP_SEARCH_LIMIT`, and `YTDLP_MAX_CANDIDATES` to keep failed lookups from hanging too long.
 
-yt-dlp and FFmpeg use browser-like request headers when extracting and reading YouTube media URLs. If playback still says it started but no audio comes through, set `LOG_LEVEL=debug` and check the deploy logs for DisTube/FFmpeg messages. You can override those media headers with `YTDLP_USER_AGENT`, `FFMPEG_USER_AGENT`, and `FFMPEG_REFERER`.
+yt-dlp and FFmpeg use browser-like request headers when extracting and reading YouTube media URLs. For yt-dlp streams, the bot passes the selected format's request headers to FFmpeg before playback. If playback still says it started but no audio comes through, set `LOG_LEVEL=debug` and check the deploy logs for DisTube/FFmpeg messages. You can override those media headers with `YTDLP_USER_AGENT`, `FFMPEG_USER_AGENT`, and `FFMPEG_REFERER`.
 
 After a song starts, the bot checks whether Discord voice is actually healthy. If it reports missing UDP ping, the host is not completing Discord's voice UDP path even though commands and queue messages still work. Move the bot to a VPS or another host with reliable Discord voice UDP, or use a Lavalink node hosted there.
 
