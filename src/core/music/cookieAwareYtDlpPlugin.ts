@@ -492,12 +492,6 @@ class CookieAwareYtDlpSong<T = unknown> extends Song<T> {
       },
       options
     );
-
-    const stream = getPlayableStream(info);
-    if (stream && this.stream.playFromSource) {
-      logSelectedStream(info, stream);
-      this.stream.url = stream.url;
-    }
   }
 }
 
