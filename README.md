@@ -86,6 +86,7 @@ Optional:
 - `YTDLP_MAX_CANDIDATES` (optional, default `3`)
 - `YTDLP_EXTRACTOR_ARGS` (optional advanced yt-dlp extractor args override)
 - `FFMPEG_USER_AGENT` or `YTDLP_USER_AGENT` (optional media request user-agent override)
+- `MP3_ATTACHMENT_MAX_BYTES` (optional max Discord MP3 upload size for `/play file:`, default `26214400`, capped at `104857600`)
 - `FFMPEG_REFERER` (optional media request referer override, defaults to `https://www.youtube.com/`)
 - `FFMPEG_PROXY` (optional proxy URL for FFmpeg media fetches; defaults to `YTDLP_PROXY`/`YOUTUBE_PROXY` when set)
 - `DISCORD_OAUTH_CLIENT_SECRET` (required for the terms agreement submit flow)
@@ -128,6 +129,8 @@ Token/port compatibility:
 - Utility/Fun: `/ping /serverinfo /userinfo /avatar /poll /remind /math /splitvc /movevc /meme /eightball /joke /roll /trivia /askai`
 
 ## Music Playback Notes
+
+`/play` supports either a normal song URL/search query or a Discord-uploaded MP3 attachment. Use `/play file:` and select an `.mp3`; the bot streams the Discord attachment URL into the same DisTube queue used by `/pause`, `/resume`, `/skip`, `/queue`, `/stop`, `/leave`, `/volume`, and `/music247`. Uploaded MP3s are not saved by the bot.
 
 YouTube may block datacenter playback with `Sign in to confirm you're not a bot` or reject anonymous format extraction. If that happens, export YouTube cookies from a dedicated YouTube account and set them in Railway as `YOUTUBE_COOKIES_BASE64`. The bot uses those cookies for YouTube search and for `yt-dlp` stream extraction.
 

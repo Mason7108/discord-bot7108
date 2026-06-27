@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, type GuildTextBasedChannel } from "discord.js";
+import { SlashCommandBuilder, type Attachment, type GuildTextBasedChannel } from "discord.js";
 import type { DisTube, Playlist, Song } from "distube";
 import type { CommandDefinition } from "../../../core/types.js";
 import { CookieAwareYtDlpPlugin } from "../../../core/music/cookieAwareYtDlpPlugin.js";
@@ -7,6 +7,15 @@ import { errorEmbed, infoEmbed, successEmbed } from "../../../utils/embeds.js";
 import { replyError, replySuccess } from "../../../utils/replies.js";
 
 type PlayInput = string | Song | Playlist;
+type PlaybackMetadata = {
+  requestedBy: string;
+  attachmentName?: string;
+  attachmentDuration?: number;
+};
+
+const DEFAULT_MAX_MP3_ATTACHMENT_BYTES = 25 * 1024 * 1024;
+const MAX_MP3_ATTACHMENT_BYTES = 100 * 1024 * 1024;
+const MP3_CONTENT_TYPES = new Set(["audio/mpeg", "audio/mp3", "audio/mpeg3", "audio/x-mpeg", "audio/x-mp3"]);
 
 function normalizePlayQuery(input: string): string {
   const trimmed = input.trim();
@@ -34,6 +43,46 @@ function normalizePlayQuery(input: string): string {
   }
 
   return trimmed;
+}
+
+function getMaxMp3AttachmentBytes(): number {
+  const configured = Number(process.env.MP3_ATTACHMENT_MAX_BYTES);
+  if (!Number.isFinite(configured) || configured <= 0) {
+    return DEFAULT_MAX_MP3_ATTACHMENT_BYTES;
+  }
+
+  return Math.min(Math.floor(configured), MAX_MP3_ATTACHMENT_BYTES);
+}
+
+function formatBytes(bytes: number): string {
+  const mb = bytes / 1024 / 1024;
+  return `${mb >= 10 ? mb.toFixed(0) : mb.toFixed(1)} MB`;
+}
+
+function hasMp3Extension(name: string): boolean {
+  return name.toLowerCase().endsWith(".mp3");
+}
+
+function getAttachmentDisplayName(attachment: Attachment): string {
+  return attachment.title?.trim() || attachment.name || "uploaded.mp3";
+}
+
+function isMp3Attachment(attachment: Attachment): boolean {
+  const contentType = attachment.contentType?.toLowerCase();
+  return (contentType ? MP3_CONTENT_TYPES.has(contentType) : false) || hasMp3Extension(getAttachmentDisplayName(attachment));
+}
+
+function truncateDisplayValue(value: string): string {
+  const trimmed = value.trim();
+  return trimmed.length > 80 ? `${trimmed.slice(0, 77)}...` : trimmed;
+}
+
+function escapeMarkdown(value: string): string {
+  return value.replace(/([\\`*_{}\[\]()#+\-.!|>])/g, "\\$1");
+}
+
+function boldDisplayValue(value: string): string {
+  return `**${escapeMarkdown(truncateDisplayValue(value))}**`;
 }
 
 function isUrl(input: string): boolean {
@@ -97,8 +146,9 @@ function isVoiceConnectionTimeout(error: unknown): boolean {
 const command: CommandDefinition = {
   data: new SlashCommandBuilder()
     .setName("play")
-    .setDescription("Play a track from URL or search query")
-    .addStringOption((option) => option.setName("query").setDescription("Song URL or query").setRequired(true)),
+    .setDescription("Play a track from URL, search query, or MP3 upload")
+    .addStringOption((option) => option.setName("query").setDescription("Song URL or query").setRequired(false))
+    .addAttachmentOption((option) => option.setName("file").setDescription("MP3 file to upload and play").setRequired(false)),
   module: "music",
   cooldownSec: 2,
   roleRequirement: "User",
@@ -125,13 +175,46 @@ const command: CommandDefinition = {
       return;
     }
 
-    const query = interaction.options.getString("query", true);
-    const normalizedQuery = normalizePlayQuery(query);
+    const query = interaction.options.getString("query")?.trim();
+    const attachment = interaction.options.getAttachment("file");
+
+    if (!query && !attachment) {
+      await replyError(interaction, "Missing Song", "Add a song URL/search query or upload an MP3 file.");
+      return;
+    }
+
+    if (query && attachment) {
+      await replyError(interaction, "Choose One Input", "Use either a song URL/search query or an MP3 upload, not both.");
+      return;
+    }
+
+    const maxAttachmentBytes = getMaxMp3AttachmentBytes();
+    if (attachment) {
+      if (!isMp3Attachment(attachment)) {
+        await replyError(interaction, "Invalid File", "Upload an `.mp3` file. Other audio formats are not supported yet.");
+        return;
+      }
+
+      if (attachment.size > maxAttachmentBytes) {
+        await replyError(
+          interaction,
+          "MP3 Too Large",
+          `Upload an MP3 smaller than ${formatBytes(maxAttachmentBytes)}. This file is ${formatBytes(attachment.size)}.`
+        );
+        return;
+      }
+    }
+
+    const isAttachmentInput = Boolean(attachment);
+    const playSource = attachment?.url ?? normalizePlayQuery(query ?? "");
+    const displayLabel = attachment ? getAttachmentDisplayName(attachment) : playSource;
     const resolveOptions = {
       member: interaction.member as never,
       metadata: {
-        requestedBy: interaction.user.id
-      }
+        requestedBy: interaction.user.id,
+        attachmentName: attachment ? getAttachmentDisplayName(attachment) : undefined,
+        attachmentDuration: attachment?.duration ?? undefined
+      } satisfies PlaybackMetadata
     };
     const playOptions = {
       textChannel: interaction.channel as GuildTextBasedChannel,
@@ -144,15 +227,24 @@ const command: CommandDefinition = {
     }
 
     await interaction.editReply({
-      embeds: [infoEmbed("Joining Voice", `Joining ${voiceCheck.voiceChannel.toString()} and searching for: **${normalizedQuery}**`)]
+      embeds: [
+        infoEmbed(
+          "Joining Voice",
+          `Joining ${voiceCheck.voiceChannel.toString()} and ${
+            isAttachmentInput ? "loading uploaded MP3" : "searching for"
+          }: ${boldDisplayValue(displayLabel)}`
+        )
+      ]
     });
 
-    let playableInput: PlayInput = normalizedQuery;
+    let playableInput: PlayInput = playSource;
     const botVoiceBeforeJoin = getBotVoiceChannel(interaction);
 
     try {
       await distube.voices.join(voiceCheck.voiceChannel);
-      playableInput = await resolveYtDlpInput(distube, normalizedQuery, resolveOptions);
+      if (!isAttachmentInput) {
+        playableInput = await resolveYtDlpInput(distube, playSource, resolveOptions);
+      }
       await distube.play(voiceCheck.voiceChannel, playableInput, playOptions);
     } catch (error) {
       if (!botVoiceBeforeJoin && interaction.guildId) {
@@ -165,8 +257,8 @@ const command: CommandDefinition = {
           distube.voices.leave(interaction.guildId);
           await new Promise((resolve) => setTimeout(resolve, 1_000));
           await distube.voices.join(voiceCheck.voiceChannel);
-          if (typeof playableInput === "string") {
-            playableInput = await resolveYtDlpInput(distube, normalizedQuery, resolveOptions);
+          if (typeof playableInput === "string" && !isAttachmentInput) {
+            playableInput = await resolveYtDlpInput(distube, playSource, resolveOptions);
           }
           await distube.play(voiceCheck.voiceChannel, playableInput, playOptions);
         } catch (retryError) {
@@ -198,10 +290,19 @@ const command: CommandDefinition = {
 
     if (interaction.deferred || interaction.replied) {
       await interaction.editReply({
-        embeds: [successEmbed("Playback Started", `Searching for: **${normalizedQuery}**`)]
+        embeds: [
+          successEmbed(
+            "Playback Started",
+            `${isAttachmentInput ? "Queued uploaded MP3" : "Searching for"}: ${boldDisplayValue(displayLabel)}`
+          )
+        ]
       });
     } else {
-      await replySuccess(interaction, "Playback Started", `Searching for: **${normalizedQuery}**`);
+      await replySuccess(
+        interaction,
+        "Playback Started",
+        `${isAttachmentInput ? "Queued uploaded MP3" : "Searching for"}: ${boldDisplayValue(displayLabel)}`
+      );
     }
   }
 };

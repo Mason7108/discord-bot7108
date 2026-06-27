@@ -8,6 +8,7 @@ import { existsSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { CookieAwareYtDlpPlugin } from "./cookieAwareYtDlpPlugin.js";
+import { Mp3AttachmentPlugin } from "./mp3AttachmentPlugin.js";
 import { getGuildSettings } from "../services/guildSettingsService.js";
 import { syncVoiceCommandListener } from "../../features/voiceCommands/listener.js";
 import type { BotClient } from "../types.js";
@@ -665,6 +666,7 @@ export async function createDisTube(client: Client): Promise<DisTube> {
     emitNewSongOnly: true,
     plugins: [
       new SpotifyPlugin(),
+      new Mp3AttachmentPlugin(),
       new CookieAwareYtDlpPlugin(ytDlpCookieFile),
       createYouTubePlugin(youtubePluginCookies)
     ] as never
