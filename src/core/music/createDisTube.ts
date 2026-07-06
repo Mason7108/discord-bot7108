@@ -1,4 +1,4 @@
-import { DisTube, Events, type Queue, type Song } from "distube";
+import { DisTube, Events, type Playlist, type Queue, type Song } from "distube";
 import { SpotifyPlugin } from "@distube/spotify";
 import { YouTubePlugin } from "@distube/youtube";
 import { AudioPlayerStatus, VoiceConnectionStatus } from "@discordjs/voice";
@@ -421,6 +421,14 @@ function createMusicIdleContext(queue: Queue): MusicIdleContext {
   };
 }
 
+function formatTrackCount(count: number): string {
+  return `${count} ${count === 1 ? "track" : "tracks"}`;
+}
+
+function getPlaylistDisplayName(playlist: Playlist): string {
+  return playlist.name || playlist.url || "playlist";
+}
+
 function scheduleMusicIdleDisconnect(distube: DisTube, queue: Queue): void {
   const context = createMusicIdleContext(queue);
   rememberMusicIdleContext(context);
@@ -705,6 +713,14 @@ export async function createDisTube(client: Client): Promise<DisTube> {
     clearMusicIdleDisconnect(queue.id);
     rememberMusicIdleContext(createMusicIdleContext(queue));
     void queue.textChannel?.send({ content: `Queued: **${song.name}**` });
+  });
+
+  distube.on(Events.ADD_LIST, (queue: Queue, playlist: Playlist) => {
+    clearMusicIdleDisconnect(queue.id);
+    rememberMusicIdleContext(createMusicIdleContext(queue));
+    void queue.textChannel?.send({
+      content: `Queued playlist: **${getPlaylistDisplayName(playlist)}** (${formatTrackCount(playlist.songs.length)})`
+    });
   });
 
   distube.on(Events.ERROR, (error: Error, queue: Queue, song?: Song) => {
