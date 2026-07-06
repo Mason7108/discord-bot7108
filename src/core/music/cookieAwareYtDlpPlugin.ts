@@ -137,6 +137,14 @@ function ytDlpSearchFlags(cookieFilePath: string | undefined, extra: Record<stri
   });
 }
 
+function ytDlpPlaylistFlags(cookieFilePath: string | undefined, extra: Record<string, unknown> = {}) {
+  return ytDlpBaseFlags(cookieFilePath, {
+    flatPlaylist: true,
+    ignoreErrors: true,
+    ...extra
+  });
+}
+
 function ytDlpStreamFlagSets(cookieFilePath: string | undefined): Record<string, unknown>[] {
   const extractorArgs = getExtractorArgs();
   const withFormat = extractorArgs.map((value) =>
@@ -422,6 +430,11 @@ function getSearchCandidateUrl(entry: YtDlpInfo): string | undefined {
     return webpageUrl;
   }
 
+  const originalUrl = typeof entry.original_url === "string" ? entry.original_url : undefined;
+  if (originalUrl?.startsWith("http://") || originalUrl?.startsWith("https://")) {
+    return originalUrl;
+  }
+
   const url = typeof entry.url === "string" ? entry.url : undefined;
   if (url?.startsWith("http://") || url?.startsWith("https://")) {
     return url;
@@ -433,6 +446,12 @@ function getSearchCandidateUrl(entry: YtDlpInfo): string | undefined {
   }
 
   return undefined;
+}
+
+function getInfoUrl(info: YtDlpInfo, fallbackUrl?: unknown): string | undefined {
+  const fallback = typeof fallbackUrl === "string" ? fallbackUrl : undefined;
+
+  return getSearchCandidateUrl(info) ?? fallback;
 }
 
 function getYtDlpAssetName(): string {
@@ -576,6 +595,15 @@ async function ytDlpJson(url: string, flags: Record<string, unknown>): Promise<Y
 async function ytDlpPlayableInfo(url: string, cookieFilePath: string | undefined): Promise<YtDlpInfo> {
   const errors: string[] = [];
 
+  try {
+    const playlistInfo = await ytDlpJson(url, ytDlpPlaylistFlags(cookieFilePath));
+    if (isPlaylist(playlistInfo)) {
+      return playlistInfo;
+    }
+  } catch (error) {
+    errors.push(formatYtDlpError(error));
+  }
+
   for (const flags of ytDlpStreamFlagSets(cookieFilePath)) {
     try {
       const info = await ytDlpJson(url, flags);
@@ -605,7 +633,7 @@ class CookieAwareYtDlpSong<T = unknown> extends Song<T> {
         playFromSource: true,
         id: String(info.id ?? info.display_id ?? info.webpage_url ?? info.original_url),
         name: info.title || info.fulltitle,
-        url: info.webpage_url || info.original_url || info.url,
+        url: getInfoUrl(info),
         isLive: Boolean(info.is_live),
         thumbnail: info.thumbnail || info.thumbnails?.[0]?.url,
         duration: info.is_live ? 0 : Number(info.duration ?? 0),
@@ -657,10 +685,10 @@ export class CookieAwareYtDlpPlugin extends PlayableExtractorPlugin {
           source: String(info.extractor ?? "yt-dlp"),
           songs: info.entries
             .filter((entry: unknown): entry is YtDlpInfo => typeof entry === "object" && entry !== null)
-            .map((entry: YtDlpInfo) => new CookieAwareYtDlpSong(this, entry, options)),
+            .map((entry: YtDlpInfo) => new CookieAwareYtDlpSong(this, { ...entry, url: getInfoUrl(entry, entry.url) }, options)),
           id: String(info.id ?? info.webpage_url ?? url),
           name: info.title,
-          url: info.webpage_url || url,
+          url: getInfoUrl(info, url),
           thumbnail: info.thumbnails?.[0]?.url
         },
         options

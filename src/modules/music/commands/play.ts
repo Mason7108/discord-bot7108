@@ -1,5 +1,5 @@
 import { SlashCommandBuilder, type Attachment, type GuildTextBasedChannel } from "discord.js";
-import type { DisTube, Playlist, Song } from "distube";
+import { Playlist, type DisTube, type Song } from "distube";
 import type { CommandDefinition } from "../../../core/types.js";
 import { CookieAwareYtDlpPlugin } from "../../../core/music/cookieAwareYtDlpPlugin.js";
 import { ensureDisTube, ensureSameVoiceAsBot, getBotVoiceChannel, getMissingBotPlaybackPermissions } from "./shared.js";
@@ -17,7 +17,11 @@ const DEFAULT_MAX_MP3_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 const MAX_MP3_ATTACHMENT_BYTES = 100 * 1024 * 1024;
 const MP3_CONTENT_TYPES = new Set(["audio/mpeg", "audio/mp3", "audio/mpeg3", "audio/x-mpeg", "audio/x-mp3"]);
 
-function normalizePlayQuery(input: string): string {
+function isYouTubePlaylistLink(parsed: URL): boolean {
+  return parsed.searchParams.has("list") && !parsed.searchParams.has("start_radio");
+}
+
+export function normalizePlayQuery(input: string): string {
   const trimmed = input.trim();
 
   if (!trimmed.includes("youtube.com/") && !trimmed.includes("youtu.be/")) {
@@ -26,6 +30,10 @@ function normalizePlayQuery(input: string): string {
 
   try {
     const parsed = new URL(trimmed);
+
+    if (isYouTubePlaylistLink(parsed)) {
+      return trimmed;
+    }
 
     // When users paste YouTube mix/radio links, keep just the actual video URL.
     if (parsed.hostname.includes("youtube.com") && parsed.searchParams.has("v")) {
@@ -83,6 +91,22 @@ function escapeMarkdown(value: string): string {
 
 function boldDisplayValue(value: string): string {
   return `**${escapeMarkdown(truncateDisplayValue(value))}**`;
+}
+
+function formatTrackCount(count: number): string {
+  return `${count} ${count === 1 ? "track" : "tracks"}`;
+}
+
+function getPlaybackStartedAction(input: PlayInput, isAttachmentInput: boolean): string {
+  if (isAttachmentInput) {
+    return "Queued uploaded MP3";
+  }
+
+  if (input instanceof Playlist) {
+    return `Queued playlist with ${formatTrackCount(input.songs.length)}`;
+  }
+
+  return "Queued";
 }
 
 function isUrl(input: string): boolean {
@@ -146,8 +170,8 @@ function isVoiceConnectionTimeout(error: unknown): boolean {
 const command: CommandDefinition = {
   data: new SlashCommandBuilder()
     .setName("play")
-    .setDescription("Play a track from URL, search query, or MP3 upload")
-    .addStringOption((option) => option.setName("query").setDescription("Song URL or query").setRequired(false))
+    .setDescription("Play a track or playlist from URL, search query, or MP3 upload")
+    .addStringOption((option) => option.setName("query").setDescription("Song/playlist URL or query").setRequired(false))
     .addAttachmentOption((option) => option.setName("file").setDescription("MP3 file to upload and play").setRequired(false)),
   module: "music",
   cooldownSec: 2,
@@ -293,7 +317,7 @@ const command: CommandDefinition = {
         embeds: [
           successEmbed(
             "Playback Started",
-            `${isAttachmentInput ? "Queued uploaded MP3" : "Searching for"}: ${boldDisplayValue(displayLabel)}`
+            `${getPlaybackStartedAction(playableInput, isAttachmentInput)}: ${boldDisplayValue(displayLabel)}`
           )
         ]
       });
@@ -301,7 +325,7 @@ const command: CommandDefinition = {
       await replySuccess(
         interaction,
         "Playback Started",
-        `${isAttachmentInput ? "Queued uploaded MP3" : "Searching for"}: ${boldDisplayValue(displayLabel)}`
+        `${getPlaybackStartedAction(playableInput, isAttachmentInput)}: ${boldDisplayValue(displayLabel)}`
       );
     }
   }
