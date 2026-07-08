@@ -5,7 +5,7 @@
     "node": "22",
     "python": "3"
   },
-  "buildAptPackages": ["ffmpeg"],
+  "buildAptPackages": ["ffmpeg", "espeak-ng"],
   "steps": {
     "install": {
       "commands": [
@@ -14,11 +14,11 @@
       ]
     },
     "build": {
-      "commands": ["ffmpeg -version", "..."]
+      "commands": ["ffmpeg -version", "espeak-ng --version", "..."]
     }
   },
   "deploy": {
-    "aptPackages": ["ffmpeg"],
+    "aptPackages": ["ffmpeg", "espeak-ng"],
     "startCommand": "npm start"
   }
 }

@@ -1,4 +1,4 @@
-import type { AutoModSettings, ModuleName, RolePolicy, VoiceCommandSettings } from "./types.js";
+import type { AutoModSettings, ModuleName, RolePolicy, VoiceCommandSettings, VoiceTextToSpeechSettings } from "./types.js";
 
 export const MODULE_NAMES: ModuleName[] = [
   "moderation",
@@ -46,6 +46,10 @@ export const DEFAULT_ROLE_POLICY: RolePolicy = {
 };
 
 export const DEFAULT_VOICE_COMMANDS: VoiceCommandSettings = {
+  enabled: false
+};
+
+export const DEFAULT_VOICE_TEXT_TO_SPEECH: VoiceTextToSpeechSettings = {
   enabled: false
 };
 

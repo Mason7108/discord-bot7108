@@ -11,6 +11,7 @@ A greenfield TypeScript Discord bot built with `discord.js v14`, `mongoose`, `ex
 - Economy + leveling (Mongo-backed)
 - Music system (DisTube)
 - Spoken music controls with opt-in `/voicecommands`
+- Voice channel chat text-to-speech with opt-in `/vctts`
 - Giveaways with button join and auto winner selection
 - Utility + fun commands
 - Express dashboard API scaffold (`/health`, settings GET/PATCH)
@@ -79,6 +80,12 @@ Optional:
 - `VOICE_COMMANDS_MAX_AUDIO_SEC` (optional max captured phrase length, default `10`)
 - `VOICE_COMMANDS_SILENCE_MS` (optional silence cutoff for a spoken phrase, default `1200`)
 - `VOICE_COMMANDS_TRANSCRIBE_TIMEOUT_MS` (optional speech-to-text request timeout, default `15000`)
+- `VC_TTS_ENGINE_PATH` (optional voice-channel TTS engine path, default `espeak-ng`)
+- `VC_TTS_VOICE` (optional espeak voice, default `en-us`)
+- `VC_TTS_SPEED` (optional voice-channel TTS speed, default `165`)
+- `VC_TTS_PITCH` (optional voice-channel TTS pitch, default `50`)
+- `VC_TTS_MAX_CHARS` (optional max spoken VC chat message length, default `220`)
+- `VC_TTS_QUEUE_LIMIT` (optional max queued VC TTS messages per server, default `5`)
 - `YOUTUBE_COOKIES_BASE64` (recommended) or `YOUTUBE_COOKIES`/`YOUTUBE_COOKIES_JSON` (optional YouTube cookie JSON array for music playback when YouTube blocks anonymous server playback)
 - `YTDLP_PROXY` or `YOUTUBE_PROXY` (optional proxy URL for YouTube extraction if Railway's IP is blocked)
 - `YTDLP_TIMEOUT_MS` (optional, default `15000`)
@@ -117,7 +124,7 @@ Token/port compatibility:
 
 ## Command Highlights
 
-- Admin: `/help`, `/config`, `/modules`
+- Admin: `/help`, `/config`, `/modules`, `/vctts`
 - Moderation: `/kick /ban /unban /timeout /untimeout /mute /unmute /warn /warnlist /purge /slowmode /lock /unlock /commandrestrict /appeal /banstatus /setpermban /reviewappeal`
 - AutoMod blocks Discord invite links by default unless the sender is `BOT_OWNER_ID` or, when unset, the Discord server owner. Toggle with `/config automod setting:discordInviteFilter value:false`.
 - Tickets: `/ticket setup|close|add|remove|syncmods|modaccess` + in-ticket buttons (`Close`, `Close With Reason`, `Claim`)
@@ -125,6 +132,7 @@ Token/port compatibility:
 - Leveling: `/level /rank /leaderboard /setlevelrole`
 - Music: `/play /pause /resume /skip /queue /stop /leave /volume /music247`
 - Voice commands: `/voicecommands enable|disable|status`
+- VC text-to-speech: `/vctts enable|disable|status`
 - Giveaways: `/giveaway start|end|reroll|delete`
 - Utility/Fun: `/ping /serverinfo /userinfo /avatar /poll /remind /math /splitvc /movevc /meme /eightball /joke /roll /trivia /askai`
 
@@ -147,6 +155,14 @@ If `/volume` reports `No active queue` immediately after `Now playing`, the stre
 When the queue is empty and the bot remains in a voice channel, it waits 2 minutes, posts an idle notice in the voice channel chat when possible, and disconnects. Enable `/music247` if you want the bot to stay connected while idle.
 
 Railway installs system `ffmpeg` through both `railpack.json` and `nixpacks.toml`, and the bot prefers an absolute Linux system binary over `ffmpeg-static`. The build runs `ffmpeg -version`; if Railway cannot install FFmpeg, the deploy should fail before the bot starts. If logs still say `ffmpeg is not installed at 'ffmpeg' path`, confirm Railway deployed the latest commit and, if needed, set the Railway service variable `RAILPACK_DEPLOY_APT_PACKAGES=ffmpeg`. If logs show `signal=SIGSEGV` from `/app/node_modules/ffmpeg-static/ffmpeg`, redeploy the latest commit so Railway uses the system package.
+
+## Voice Channel Text-To-Speech Setup
+
+VC TTS is disabled by default per server. A server admin must run `/vctts enable` before the bot reads voice channel chat aloud. Run `/vctts disable` to turn it off, and `/vctts status` to verify the speech engine.
+
+When enabled, a user can type in the text chat attached to a voice channel and the bot will speak that message in that same voice channel. The user must be connected to that voice channel. The bot skips VC TTS while a music queue is active so it does not interrupt songs.
+
+VC TTS uses `espeak-ng` and does not require an OpenAI API key. Railway installs `espeak-ng` through both deployment configs. For local development, install `espeak-ng` yourself or set `VC_TTS_ENGINE_PATH` to a compatible executable.
 
 ## Voice Command Setup
 
@@ -198,6 +214,11 @@ Privacy behavior:
 6. A log embed is posted to `AGREEMENT_LOG_CHANNEL_ID` when someone agrees.
 7. Slash commands, autocomplete, buttons, modals, and leveling rewards are blocked until the current terms version is accepted.
 
+Update announcement policy:
+
+- When bot7108 is updated, post a message in the updates announcement channel `1523399601225203892` explaining what changed and what is new.
+- Review the Terms of Service and Privacy Policy on the first day of every month. If either policy changed or new terms were added, post the update in the tos-updates channel `1523399665213767731`.
+
 Discord OAuth setup:
 
 1. In the Discord Developer Portal, add this redirect URL to the bot application:
@@ -225,11 +246,12 @@ https://your-app.up.railway.app/auth/discord/callback
 2. In Railway, create a new project from the repo.
 3. Set all required environment variables (`BOT_TOKEN`/`DISCORD_TOKEN`, `CLIENT_ID`, `MONGO_URI`, verification vars).
 4. Ensure `BASE_URL` matches your Railway public URL.
-5. Deploy. Railway provides `PORT` automatically; the app already supports it. The included `railpack.json` and `nixpacks.toml` install Node.js 22, Python 3, system FFmpeg, and replace the default `yt-dlp` launcher with the standalone Linux `yt-dlp` binary for music playback.
+5. Deploy. Railway provides `PORT` automatically; the app already supports it. The included `railpack.json` and `nixpacks.toml` install Node.js 22, Python 3, system FFmpeg, `espeak-ng` for VC TTS, and replace the default `yt-dlp` launcher with the standalone Linux `yt-dlp` binary for music playback.
 
 ## Notes
 
 - Music commands are enabled by default for new guilds. For existing guild records where music was previously disabled, enable with `/modules enable module:music`.
+- VC TTS uses the music module gate because it joins and speaks in voice channels.
 - Ban appeals use a DM invite flow. Discord bots cannot force-add banned users to the appeal server unless the user completed OAuth2 with `guilds.join` and the bot has a valid user access token.
 - Appeal setup: put `MAIN_GUILD_ID`, `APPEAL_GUILD_ID=1490191877960503457`, `APPEAL_REVIEW_CHANNEL_ID`, `BANNED_USER_ROLE_ID` if you use a fixed appeal-server role, and `APPEAL_SERVER_INVITE` in `.env` locally or Railway environment variables in production.
 - Required bot permissions: main server `View Audit Log` for moderator/reason lookup, `Send Messages`, and normal moderation event access; appeal server `Manage Roles`, `Send Messages`, and `Create Instant Invite` only if `APPEAL_SERVER_INVITE` is not configured.
