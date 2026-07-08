@@ -1,6 +1,13 @@
-import { DEFAULT_AUTOMOD, DEFAULT_MODULE_STATE, DEFAULT_ROLE_POLICY, DEFAULT_VOICE_COMMANDS, MODULE_NAMES } from "../constants.js";
+import {
+  DEFAULT_AUTOMOD,
+  DEFAULT_MODULE_STATE,
+  DEFAULT_ROLE_POLICY,
+  DEFAULT_VOICE_COMMANDS,
+  DEFAULT_VOICE_TEXT_TO_SPEECH,
+  MODULE_NAMES
+} from "../constants.js";
 import { GuildSettingsModel } from "../../models/GuildSettings.js";
-import type { AutoModSettings, GuildSettingsShape, ModuleName, VoiceCommandSettings } from "../types.js";
+import type { AutoModSettings, GuildSettingsShape, ModuleName, VoiceCommandSettings, VoiceTextToSpeechSettings } from "../types.js";
 
 function normalizeModules(raw: Partial<Record<ModuleName, boolean>> | undefined): Record<ModuleName, boolean> {
   const result: Record<ModuleName, boolean> = { ...DEFAULT_MODULE_STATE };
@@ -34,6 +41,14 @@ function normalizeVoiceCommands(raw: Partial<VoiceCommandSettings> | undefined):
   };
 }
 
+function normalizeVoiceTextToSpeech(raw: Partial<VoiceTextToSpeechSettings> | undefined): VoiceTextToSpeechSettings {
+  return {
+    ...DEFAULT_VOICE_TEXT_TO_SPEECH,
+    ...raw,
+    enabled: raw?.enabled ?? DEFAULT_VOICE_TEXT_TO_SPEECH.enabled
+  };
+}
+
 export async function getGuildSettings(guildId: string): Promise<GuildSettingsShape> {
   const existing = await GuildSettingsModel.findOne({ guildId }).lean<GuildSettingsShape | null>();
 
@@ -43,7 +58,8 @@ export async function getGuildSettings(guildId: string): Promise<GuildSettingsSh
       modules: normalizeModules(existing.modules),
       automod: normalizeAutomod(existing.automod),
       gamblingEnabled: existing.gamblingEnabled ?? true,
-      voiceCommands: normalizeVoiceCommands(existing.voiceCommands)
+      voiceCommands: normalizeVoiceCommands(existing.voiceCommands),
+      voiceTextToSpeech: normalizeVoiceTextToSpeech(existing.voiceTextToSpeech)
     };
   }
 
@@ -67,6 +83,7 @@ export async function getGuildSettings(guildId: string): Promise<GuildSettingsSh
     gamblingEnabled: created.gamblingEnabled,
     music247Enabled: created.music247Enabled,
     voiceCommands: normalizeVoiceCommands(created.voiceCommands),
+    voiceTextToSpeech: normalizeVoiceTextToSpeech(created.voiceTextToSpeech),
     rolePolicy: created.rolePolicy
   };
 }
@@ -92,6 +109,7 @@ export async function updateGuildSettings(
     modules: normalizeModules(updated.modules),
     automod: normalizeAutomod(updated.automod),
     gamblingEnabled: updated.gamblingEnabled ?? true,
-    voiceCommands: normalizeVoiceCommands(updated.voiceCommands)
+    voiceCommands: normalizeVoiceCommands(updated.voiceCommands),
+    voiceTextToSpeech: normalizeVoiceTextToSpeech(updated.voiceTextToSpeech)
   };
 }

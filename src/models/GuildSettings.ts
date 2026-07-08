@@ -1,5 +1,5 @@
 import { model, Schema, type Document } from "mongoose";
-import { DEFAULT_AUTOMOD, DEFAULT_MODULE_STATE, DEFAULT_ROLE_POLICY } from "../core/constants.js";
+import { DEFAULT_AUTOMOD, DEFAULT_MODULE_STATE, DEFAULT_ROLE_POLICY, DEFAULT_VOICE_TEXT_TO_SPEECH } from "../core/constants.js";
 import type { GuildSettingsShape } from "../core/types.js";
 
 export interface GuildSettingsDocument extends Document, GuildSettingsShape {}
@@ -50,6 +50,9 @@ const guildSettingsSchema = new Schema<GuildSettingsDocument>(
     voiceCommands: {
       enabled: { type: Boolean, default: false },
       textChannelId: { type: String }
+    },
+    voiceTextToSpeech: {
+      enabled: { type: Boolean, default: DEFAULT_VOICE_TEXT_TO_SPEECH.enabled }
     },
     rolePolicy: {
       adminRoleIds: { type: [String], default: DEFAULT_ROLE_POLICY.adminRoleIds },

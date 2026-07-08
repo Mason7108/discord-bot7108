@@ -3,11 +3,12 @@ import { getGuildSettings } from "../core/services/guildSettingsService.js";
 import { hasAcceptedTerms } from "../core/services/termsAgreementService.js";
 import { processLevelingMessage } from "../systems/leveling.js";
 import { runAutomod } from "../systems/automod.js";
+import { processVoiceTextToSpeechMessage } from "../systems/voiceTextToSpeech.js";
 import { logger } from "../utils/logger.js";
 
 const event: EventDefinition = {
   name: "messageCreate",
-  async execute(_client, rawMessage) {
+  async execute(client, rawMessage) {
     const message = rawMessage as any;
 
     if (!message.guild || message.author?.bot) {
@@ -28,6 +29,7 @@ const event: EventDefinition = {
     }
 
     await processLevelingMessage(message, settings);
+    await processVoiceTextToSpeechMessage(client, message, settings);
   }
 };
 

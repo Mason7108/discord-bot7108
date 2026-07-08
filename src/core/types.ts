@@ -48,6 +48,10 @@ export interface VoiceCommandSettings {
   textChannelId?: string;
 }
 
+export interface VoiceTextToSpeechSettings {
+  enabled: boolean;
+}
+
 export interface GuildSettingsShape {
   guildId: string;
   modules: Record<ModuleName, boolean>;
@@ -61,6 +65,7 @@ export interface GuildSettingsShape {
   gamblingEnabled: boolean;
   music247Enabled: boolean;
   voiceCommands: VoiceCommandSettings;
+  voiceTextToSpeech: VoiceTextToSpeechSettings;
   rolePolicy: RolePolicy;
 }
 
