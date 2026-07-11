@@ -84,7 +84,10 @@ export function startApiServer(env: Env, client: BotClient): Server | null {
       }
     },
     crossOriginEmbedderPolicy: false,
-    crossOriginResourcePolicy: { policy: "cross-origin" }
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+    // Discord Activities run inside a discord.com iframe. CSP controls the
+    // allowed parents; X-Frame-Options: SAMEORIGIN would block that embed.
+    xFrameOptions: false
   }));
   app.use((req, res, next) => {
     const origin = req.headers.origin;
