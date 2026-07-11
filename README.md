@@ -10,6 +10,7 @@ A greenfield TypeScript Discord bot built with `discord.js v14`, `mongoose`, `ex
 - Ticket system with button-based creation + transcript on close
 - Economy + leveling (Mongo-backed)
 - Music system (DisTube)
+- Discord Activity control panel for music/video queue management
 - Spoken music controls with opt-in `/voicecommands`
 - Voice channel chat text-to-speech with opt-in `/vctts`
 - Giveaways with button join and auto winner selection
@@ -56,6 +57,46 @@ npm run build
 npm start
 ```
 
+## bot7108 Activity
+
+The Discord Activity frontend lives in `activity/`. The production build is served at `/` by the same Express/Socket.IO process as the bot API. YouTube videos play on each participant's device through the visible official YouTube IFrame Player. The server synchronizes queue commands and timing only; it never downloads, extracts, or restreams Activity YouTube audio.
+
+Calling `/play` with no options launches the Activity. Calling `/play query:...` or `/play file:...` preserves the existing, separate DisTube voice-bot behavior.
+
+Development:
+
+```bash
+npm run dev
+npm run activity:dev
+```
+
+The API uses `API_PORT`/`PORT` (default `3000`); Vite uses `5173` and proxies `/api` and `/socket.io` to the API. Open `http://localhost:5173/?scope=test-room&user=Host` for a development session. Use a second browser profile with the same `scope` and another `user` value to test synchronization.
+
+### Discord Developer Portal setup
+
+1. Select the same Discord application used by bot7108 and enable Activities.
+2. Add the OAuth2 redirect URI required by your Activity deployment and set the same value in `DISCORD_REDIRECT_URI` when your OAuth configuration requires it.
+3. Configure URL mappings to the single public HTTPS deployment: `/` -> deployment host, `/api` -> deployment host, and `/socket.io` -> deployment host. Do not include paths in the target host fields unless the portal UI explicitly requests a full target URL.
+4. Allow the origin `https://CLIENT_ID.discordsays.com` in deployment configuration. The server includes that origin automatically from `CLIENT_ID`; add tunnel or custom origins to `ACTIVITY_ALLOWED_ORIGINS` as a comma-separated list.
+5. Install the app in a test server with the `applications.commands` and `identify` OAuth scopes. The application needs its normal bot permissions to see members and voice channels.
+6. Join a voice channel and run `/play` with no query or file. Discord responds with the Activity launch callback and opens the mapped web app.
+
+For local Discord testing, run both development processes, create an HTTPS tunnel to port `5173`, and temporarily point all three URL mappings at that tunnel host. Tunnel URLs are temporary and must be replaced when they change.
+
+### Google Cloud and Spotify
+
+- Enable YouTube Data API v3 in a Google Cloud project, create an API key, restrict it to YouTube Data API v3 and the backend deployment where supported, then set `YOUTUBE_API_KEY` on the server. The key is never bundled into Vite.
+- Set `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET` from a Spotify developer application to enable Spotify URL metadata. Spotify entries are always labeled metadata-only and cannot play audio in this Activity.
+- If Spotify credentials are absent, YouTube and uploads continue to work and Spotify resolution returns a configuration message.
+
+### Upload storage
+
+Development uploads are written under `UPLOAD_DIRECTORY` with generated filenames and a limit set by `UPLOAD_MAX_MB`. Railway's normal container filesystem is ephemeral. Production should attach a persistent volume or replace this development store with private object storage and signed media URLs. Users should upload only audio they own or have permission to share.
+
+### Activity socket protocol
+
+The server-authoritative protocol uses `session:join`, `session:state`, `sync:request`, `queue:add`, `queue:remove`, `queue:reorder`, `queue:clear`, `queue:play-next`, `player:play`, `player:pause`, `player:seek`, `player:next`, `player:previous`, `player:ended`, `settings:shuffle`, `settings:repeat`, `settings:collaboration`, and `host:transfer`. Every mutation returns a structured acknowledgement. The first participant is host, host status transfers on disconnect, and browser-provided identities or room names are not accepted in production sockets.
+
 ## Required Environment Variables
 
 - `BOT_TOKEN`
@@ -66,6 +107,19 @@ Optional:
 
 - `DEV_GUILD_ID` (guild-scoped slash sync in development)
 - `API_PORT`
+- `DISCORD_CLIENT_SECRET` or `DISCORD_OAUTH_CLIENT_SECRET` (required for Discord Activity user auth)
+- `DISCORD_REDIRECT_URI` (Activity OAuth redirect URI when configured in the portal)
+- `ACTIVITY_SESSION_SECRET` (recommended in all environments and required for stable production sessions; at least 32 characters)
+- `ACTIVITY_ALLOWED_ORIGINS` (optional comma-separated tunnel or custom origins)
+- `ACTIVITY_SESSION_TTL_MIN` (optional signed session lifetime, default `240`)
+- `FRONTEND_ORIGIN` (local or deployed frontend origin)
+- `PUBLIC_ACTIVITY_URL` and `BACKEND_PUBLIC_URL` (deployment URLs used for documentation and origin policy)
+- `YOUTUBE_API_KEY` (required for Activity YouTube search and link resolution)
+- `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET` (optional, metadata only)
+- `UPLOAD_MAX_MB` (Activity upload limit, default `25`, maximum `100`)
+- `UPLOAD_DIRECTORY` (development upload path, default `data/activity-uploads`)
+- `VITE_DISCORD_CLIENT_ID` (optional; Vite falls back to `CLIENT_ID`)
+- `VITE_ACTIVITY_API_BASE_URL` (optional Activity API origin override)
 - `BOT_OWNER_ID` (user allowed to post Discord invite links; falls back to the Discord server owner if unset)
 - `MAIN_GUILD_ID` (main server where bans are detected; falls back to `GUILD_ID` if unset)
 - `APPEAL_GUILD_ID` (appeal server; defaults to `1490191877960503457`)

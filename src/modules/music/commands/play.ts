@@ -2,7 +2,7 @@ import { SlashCommandBuilder, type Attachment, type GuildTextBasedChannel } from
 import { Playlist, type DisTube, type Song } from "distube";
 import type { CommandDefinition } from "../../../core/types.js";
 import { CookieAwareYtDlpPlugin } from "../../../core/music/cookieAwareYtDlpPlugin.js";
-import { ensureDisTube, ensureSameVoiceAsBot, getBotVoiceChannel, getMissingBotPlaybackPermissions } from "./shared.js";
+import { ensureDisTube, ensureSameVoiceAsBot, getBotVoiceChannel, getMissingBotPlaybackPermissions, getVoiceChannel } from "./shared.js";
 import { errorEmbed, infoEmbed, successEmbed } from "../../../utils/embeds.js";
 import { replyError, replySuccess } from "../../../utils/replies.js";
 
@@ -170,13 +170,25 @@ function isVoiceConnectionTimeout(error: unknown): boolean {
 const command: CommandDefinition = {
   data: new SlashCommandBuilder()
     .setName("play")
-    .setDescription("Play a track or playlist from URL, search query, or MP3 upload")
+    .setDescription("Open bot7108 Activity, or play through the bot with a query or MP3")
     .addStringOption((option) => option.setName("query").setDescription("Song/playlist URL or query").setRequired(false))
     .addAttachmentOption((option) => option.setName("file").setDescription("MP3 file to upload and play").setRequired(false)),
   module: "music",
   cooldownSec: 2,
   roleRequirement: "User",
   async execute({ client, interaction }) {
+    const query = interaction.options.getString("query")?.trim();
+    const attachment = interaction.options.getAttachment("file");
+
+    if (!query && !attachment) {
+      if (!interaction.guild || !getVoiceChannel(interaction)) {
+        await replyError(interaction, "Join Voice", "Join a voice channel before launching bot7108 Activity.");
+        return;
+      }
+      await interaction.launchActivity();
+      return;
+    }
+
     const distube = ensureDisTube(client);
     if (!distube || !interaction.guild || !interaction.channel || interaction.channel.isDMBased()) {
       await replyError(interaction, "Music Unavailable", "Music service is not initialized.");
@@ -196,14 +208,6 @@ const command: CommandDefinition = {
         "Missing Permissions",
         `I need these permissions in ${voiceCheck.voiceChannel.toString()}: ${missingPermissions.map((permission) => `\`${permission}\``).join(", ")}.`
       );
-      return;
-    }
-
-    const query = interaction.options.getString("query")?.trim();
-    const attachment = interaction.options.getAttachment("file");
-
-    if (!query && !attachment) {
-      await replyError(interaction, "Missing Song", "Add a song URL/search query or upload an MP3 file.");
       return;
     }
 

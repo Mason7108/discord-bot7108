@@ -328,10 +328,17 @@ const event: EventDefinition = {
         .setDescription("An unexpected error occurred while executing this command.")
         .setTimestamp();
 
-      if (interaction.deferred || interaction.replied) {
-        await interaction.followUp({ embeds: [embed], ephemeral: true });
-      } else {
-        await interaction.reply({ embeds: [embed], ephemeral: true });
+      try {
+        if (interaction.deferred || interaction.replied) {
+          await interaction.followUp({ embeds: [embed], ephemeral: true });
+        } else {
+          await interaction.reply({ embeds: [embed], ephemeral: true });
+        }
+      } catch (responseError) {
+        logger.warn(
+          { err: responseError, command: interaction.commandName },
+          "Could not send command failure response (interaction may already be acknowledged)"
+        );
       }
     }
   }
