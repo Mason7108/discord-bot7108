@@ -1,9 +1,10 @@
 import { FileAudio, Music2 } from "lucide-react";
 import type { ActivityMediaItem } from "../types/activity";
+import { activityMediaUrl } from "../utils/activityProxy";
 
 export function MediaThumb({ item, className = "" }: { item: ActivityMediaItem; className?: string }) {
   if (item.thumbnailUrl) {
-    return <img className={`media-thumb ${className}`} src={item.thumbnailUrl} alt="" loading="lazy" referrerPolicy="no-referrer" />;
+    return <img className={`media-thumb ${className}`} src={activityMediaUrl(item.thumbnailUrl)} alt="" loading="lazy" referrerPolicy="no-referrer" />;
   }
   return (
     <div className={`media-thumb media-thumb-fallback ${className}`} aria-hidden="true">
