@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ActivityQueueItem, ActivitySessionState } from "../types/activity";
+import { youtubeIframeApiUrl, youtubePlayerHost } from "../utils/activityProxy";
 import { expectedPosition } from "../utils/time";
 
 type PlayerState = -1 | 0 | 1 | 2 | 3 | 5;
@@ -40,7 +41,7 @@ function loadApi(): Promise<YouTubeApi> {
       else reject(new Error("YouTube player API did not initialize."));
     };
     const script = document.createElement("script");
-    script.src = "https://www.youtube.com/iframe_api";
+    script.src = youtubeIframeApiUrl();
     script.async = true;
     script.addEventListener("error", () => reject(new Error("YouTube player API could not be loaded.")));
     document.head.appendChild(script);
@@ -78,6 +79,7 @@ export function useYouTubePlayer(options: Options) {
       playerRef.current = new YT.Player(containerRef.current, {
         width: "100%",
         height: "100%",
+        host: youtubePlayerHost(),
         videoId: options.item!.sourceId,
         playerVars: {
           controls: 1,
