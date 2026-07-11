@@ -142,7 +142,21 @@ export function PlayerPanel(props: Props) {
           <button className="icon-button" type="button" title="Previous" aria-label="Previous item" disabled={!props.canManage || !item} onClick={props.onPrevious}>
             <SkipBack size={22} fill="currentColor" />
           </button>
-          <button className="play-button" type="button" aria-label={props.state.playing ? "Pause" : "Play"} disabled={!props.canManage || !item || item.playbackKind === "none"} onClick={() => props.state.playing ? props.onPause(props.progress) : props.onPlay()}>
+          <button
+            className="play-button"
+            type="button"
+            aria-label={props.state.playing ? "Pause" : "Play"}
+            disabled={!props.canManage || !item || item.playbackKind === "none"}
+            onClick={() => {
+              if (props.state.playing) {
+                if (item?.playbackKind === "youtube") youtube.pauseLocal();
+                props.onPause(props.progress);
+              } else {
+                if (item?.playbackKind === "youtube") youtube.playLocal();
+                props.onPlay();
+              }
+            }}
+          >
             {props.state.playing ? <Pause size={25} fill="currentColor" /> : <Play size={25} fill="currentColor" />}
           </button>
           <button className="icon-button" type="button" title="Next" aria-label="Next item" disabled={!props.canManage || !item} onClick={props.onNext}>

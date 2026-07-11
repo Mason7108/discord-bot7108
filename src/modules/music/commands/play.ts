@@ -2,8 +2,9 @@ import { SlashCommandBuilder, type Attachment, type GuildTextBasedChannel } from
 import { Playlist, type DisTube, type Song } from "distube";
 import type { CommandDefinition } from "../../../core/types.js";
 import { CookieAwareYtDlpPlugin } from "../../../core/music/cookieAwareYtDlpPlugin.js";
-import { ensureDisTube, ensureSameVoiceAsBot, getBotVoiceChannel, getMissingBotPlaybackPermissions, getVoiceChannel } from "./shared.js";
+import { ensureDisTube, ensureSameVoiceAsBot, getBotVoiceChannel, getMissingBotPlaybackPermissions } from "./shared.js";
 import { errorEmbed, infoEmbed, successEmbed } from "../../../utils/embeds.js";
+import { logger } from "../../../utils/logger.js";
 import { replyError, replySuccess } from "../../../utils/replies.js";
 
 type PlayInput = string | Song | Playlist;
@@ -181,11 +182,43 @@ const command: CommandDefinition = {
     const attachment = interaction.options.getAttachment("file");
 
     if (!query && !attachment) {
-      if (!interaction.guild || !getVoiceChannel(interaction)) {
-        await replyError(interaction, "Join Voice", "Join a voice channel before launching bot7108 Activity.");
+      const distube = ensureDisTube(client);
+      const voiceCheck = ensureSameVoiceAsBot(interaction);
+      if (!distube || !interaction.guild) {
+        await replyError(interaction, "Music Unavailable", "Music service is not initialized.");
         return;
       }
+      if (!voiceCheck.ok || !voiceCheck.voiceChannel) {
+        await replyError(interaction, "Join Voice", voiceCheck.reason ?? "Join a voice channel before launching bot7108 Activity.");
+        return;
+      }
+
+      const missingPermissions = getMissingBotPlaybackPermissions(interaction, voiceCheck.voiceChannel);
+      if (missingPermissions.length > 0) {
+        await replyError(
+          interaction,
+          "Missing Permissions",
+          `I need these permissions in ${voiceCheck.voiceChannel.toString()}: ${missingPermissions.map((permission) => `\`${permission}\``).join(", ")}.`
+        );
+        return;
+      }
+
       await interaction.launchActivity();
+
+      if (!getBotVoiceChannel(interaction)) {
+        try {
+          await distube.voices.join(voiceCheck.voiceChannel);
+        } catch (error) {
+          logger.warn(
+            { err: error, guildId: interaction.guildId, channelId: voiceCheck.voiceChannel.id },
+            "Failed to join voice after launching bot7108 Activity"
+          );
+          await interaction.followUp({
+            content: "The Activity opened, but I could not join your voice channel. Check my Connect, Speak, and Use Voice Activity permissions.",
+            ephemeral: true
+          }).catch(() => undefined);
+        }
+      }
       return;
     }
 

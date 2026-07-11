@@ -68,7 +68,14 @@ export function useYouTubePlayer(options: Options) {
     container.replaceChildren(iframe);
 
     const listen = () => post({ event: "listening", id: "bot7108-youtube-player" });
-    iframe.addEventListener("load", listen);
+    const initializePlayer = () => {
+      listen();
+      setReady(true);
+      command("setVolume", [latest.current.volume]);
+      command("seekTo", [expectedPosition(latest.current.state), true]);
+      if (latest.current.state.playing) command("playVideo");
+    };
+    iframe.addEventListener("load", initializePlayer);
     const listeningInterval = window.setInterval(listen, 500);
 
     const receive = (event: MessageEvent) => {
@@ -99,6 +106,7 @@ export function useYouTubePlayer(options: Options) {
     return () => {
       window.clearInterval(listeningInterval);
       window.removeEventListener("message", receive);
+      iframe.removeEventListener("load", initializePlayer);
       iframe.remove();
       iframeRef.current = null;
     };
@@ -107,6 +115,12 @@ export function useYouTubePlayer(options: Options) {
   useEffect(() => {
     if (ready) command("setVolume", [options.volume]);
   }, [command, options.volume, ready]);
+
+  useEffect(() => {
+    if (!ready || options.item?.playbackKind !== "youtube") return;
+    suppressUntil.current = Date.now() + 900;
+    command(options.state.playing ? "playVideo" : "pauseVideo");
+  }, [command, options.item?.playbackKind, options.item?.sourceId, options.state.playing, options.state.updatedAt, ready]);
 
   useEffect(() => {
     if (!ready || options.item?.playbackKind !== "youtube") return;
@@ -134,5 +148,15 @@ export function useYouTubePlayer(options: Options) {
     command("seekTo", [seconds, true]);
   }, [command]);
 
-  return { containerRef, ready, syncStatus, seekLocal };
+  const playLocal = useCallback(() => {
+    suppressUntil.current = Date.now() + 1500;
+    command("playVideo");
+  }, [command]);
+
+  const pauseLocal = useCallback(() => {
+    suppressUntil.current = Date.now() + 1500;
+    command("pauseVideo");
+  }, [command]);
+
+  return { containerRef, ready, syncStatus, seekLocal, playLocal, pauseLocal };
 }
