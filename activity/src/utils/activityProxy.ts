@@ -19,13 +19,21 @@ export function activityMediaUrl(rawUrl: string, hostname = window.location.host
   return rawUrl;
 }
 
-export function youtubeIframeApiUrl(hostname = window.location.hostname): string {
-  return isDiscordActivityProxy(hostname) ? "/youtube/iframe_api" : "https://www.youtube.com/iframe_api";
-}
-
-export function youtubePlayerHost(
+export function youtubeEmbedUrl(
+  videoId: string,
+  startSeconds: number,
   hostname = window.location.hostname,
   origin = window.location.origin
 ): string {
-  return isDiscordActivityProxy(hostname) ? `${origin}/youtube` : "https://www.youtube.com";
+  const base = isDiscordActivityProxy(hostname)
+    ? `${origin}/youtube/embed/${encodeURIComponent(videoId)}`
+    : `https://www.youtube.com/embed/${encodeURIComponent(videoId)}`;
+  const url = new URL(base);
+  url.searchParams.set("enablejsapi", "1");
+  url.searchParams.set("controls", "1");
+  url.searchParams.set("playsinline", "1");
+  url.searchParams.set("rel", "0");
+  url.searchParams.set("origin", origin);
+  if (startSeconds > 0) url.searchParams.set("start", String(Math.floor(startSeconds)));
+  return url.toString();
 }

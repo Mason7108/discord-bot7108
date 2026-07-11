@@ -21,6 +21,11 @@ type VideoResponse = {
   error?: { message?: string };
 };
 
+type PlaylistItemsResponse = {
+  items?: Array<{ contentDetails?: { videoId?: string } }>;
+  error?: { message?: string };
+};
+
 export class YouTubeServiceError extends Error {
   constructor(readonly code: string, message: string) {
     super(message);
@@ -91,6 +96,28 @@ export class YouTubeService {
     return item;
   }
 
+  async getPlaylist(playlistId: string): Promise<ActivityMediaItem[]> {
+    const params = new URLSearchParams({
+      key: this.requireKey(),
+      part: "contentDetails",
+      playlistId,
+      maxResults: "50"
+    });
+    const response = await fetch(`https://www.googleapis.com/youtube/v3/playlistItems?${params}`);
+    const body = (await response.json()) as PlaylistItemsResponse;
+    if (!response.ok) {
+      throw new YouTubeServiceError("YOUTUBE_PLAYLIST_FAILED", body.error?.message ?? "YouTube playlist lookup failed.");
+    }
+    const videoIds = (body.items ?? [])
+      .map((item) => item.contentDetails?.videoId)
+      .filter((id): id is string => Boolean(id));
+    const items = await this.getVideos(videoIds);
+    if (items.length === 0) {
+      throw new YouTubeServiceError("YOUTUBE_PLAYLIST_EMPTY", "That playlist has no public videos that allow embedding.");
+    }
+    return items;
+  }
+
   async getVideos(videoIds: string[]): Promise<ActivityMediaItem[]> {
     if (videoIds.length === 0) {
       return [];
@@ -149,4 +176,13 @@ export function parseYouTubeVideoId(input: URL): string | undefined {
     }
   }
   return candidate && /^[A-Za-z0-9_-]{11}$/.test(candidate) ? candidate : undefined;
+}
+
+export function parseYouTubePlaylistId(input: URL): string | undefined {
+  const host = input.hostname.toLowerCase().replace(/^www\./, "");
+  if (host !== "youtube.com" && host !== "m.youtube.com" && host !== "music.youtube.com" && host !== "youtu.be") {
+    return undefined;
+  }
+  const candidate = input.searchParams.get("list");
+  return candidate && /^[A-Za-z0-9_-]{10,80}$/.test(candidate) ? candidate : undefined;
 }

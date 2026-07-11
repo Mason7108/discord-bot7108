@@ -2,8 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   activityMediaUrl,
   isDiscordActivityProxy,
-  youtubeIframeApiUrl,
-  youtubePlayerHost
+  youtubeEmbedUrl
 } from "../../activity/src/utils/activityProxy";
 
 describe("Discord Activity proxy URLs", () => {
@@ -22,14 +21,16 @@ describe("Discord Activity proxy URLs", () => {
   it("keeps direct browser URLs unchanged", () => {
     const thumbnail = "https://i.ytimg.com/vi/M7lc1UVf-VE/hqdefault.jpg";
     expect(activityMediaUrl(thumbnail, "localhost")).toBe(thumbnail);
-    expect(youtubeIframeApiUrl("localhost")).toBe("https://www.youtube.com/iframe_api");
-    expect(youtubePlayerHost("localhost", "http://localhost:5173")).toBe("https://www.youtube.com");
+    expect(youtubeEmbedUrl("M7lc1UVf-VE", 0, "localhost", "http://localhost:5173"))
+      .toContain("https://www.youtube.com/embed/M7lc1UVf-VE");
   });
 
   it("routes the official player through the Activity proxy", () => {
     const hostname = "1474958097758814279.discordsays.com";
     const origin = `https://${hostname}`;
-    expect(youtubeIframeApiUrl(hostname)).toBe("/youtube/iframe_api");
-    expect(youtubePlayerHost(hostname, origin)).toBe(`${origin}/youtube`);
+    const url = youtubeEmbedUrl("M7lc1UVf-VE", 42.5, hostname, origin);
+    expect(url).toContain(`${origin}/youtube/embed/M7lc1UVf-VE`);
+    expect(url).toContain("enablejsapi=1");
+    expect(url).toContain("start=42");
   });
 });

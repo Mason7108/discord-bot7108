@@ -114,7 +114,14 @@ export function registerMusicActivityRoutes(
   app.post("/api/media/resolve", auth.requestMiddleware, mutationLimiter, asyncRoute(async (req, res) => {
     try {
       const body = resolveSchema.parse(req.body);
-      res.json({ ok: true, data: auth.signMedia(await resolver.resolve(body.url), req.activityIdentity!) });
+      const resolution = await resolver.resolve(body.url);
+      res.json({
+        ok: true,
+        data: {
+          ...resolution,
+          items: resolution.items.map((item) => auth.signMedia(item, req.activityIdentity!))
+        }
+      });
     } catch (error) {
       sendError(res, error);
     }

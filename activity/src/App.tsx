@@ -59,7 +59,10 @@ export function App() {
   async function addResolved(url: string) {
     if (!token) return;
     try {
-      await activity.actions.add(await resolveMedia(token, url));
+      const resolution = await resolveMedia(token, url);
+      for (const item of resolution.items) {
+        await activity.actions.add(item);
+      }
     } catch (error) {
       report(error);
     }

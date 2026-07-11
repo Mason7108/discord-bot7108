@@ -69,6 +69,11 @@ export interface ActivitySearchPage {
   nextPageToken?: string;
 }
 
+export interface ActivityMediaResolution {
+  kind: "single" | "playlist";
+  items: ActivityMediaItem[];
+}
+
 export interface ActivityAuthResult {
   sessionToken: string;
   discordAccessToken?: string;
