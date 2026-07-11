@@ -1,4 +1,5 @@
 import express from "express";
+import helmet from "helmet";
 import type { Server } from "node:http";
 import type { Env } from "../config/env.js";
 import type { BotClient } from "../core/types.js";
@@ -7,6 +8,10 @@ import { MODULE_NAMES } from "../core/constants.js";
 import { registerTermsAgreementRoutes } from "../systems/termsAgreement.js";
 import { buildVerifyPage, completeVerification } from "../systems/verification.js";
 import { logger } from "../utils/logger.js";
+import { ActivityAuthenticator } from "./musicActivity/auth.js";
+import { registerMusicActivityRoutes } from "./musicActivity/routes.js";
+import { createMusicActivityService } from "./musicActivity/service.js";
+import { registerMusicActivitySockets } from "./musicActivity/socket.js";
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -53,9 +58,50 @@ function pickUpdatableSettings(body: unknown) {
 
 export function startApiServer(env: Env, client: BotClient): Server | null {
   const app = express();
+  const musicActivityService = createMusicActivityService();
+  const activityAuth = new ActivityAuthenticator(env, client);
+  const configuredOrigins = env.ACTIVITY_ALLOWED_ORIGINS?.split(",").map((value) => value.trim()).filter(Boolean) ?? [];
+  const allowedOrigins = new Set([
+    `https://${env.CLIENT_ID}.discordsays.com`,
+    env.FRONTEND_ORIGIN,
+    env.PUBLIC_ACTIVITY_URL,
+    ...configuredOrigins,
+    ...(env.NODE_ENV !== "production" ? ["http://localhost:5173", "http://127.0.0.1:5173"] : [])
+  ].filter((value): value is string => Boolean(value)));
 
-  app.use(express.json());
-  app.use(express.urlencoded({ extended: false }));
+  app.disable("x-powered-by");
+  app.use(helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "https://www.youtube.com", "https://s.ytimg.com"],
+        frameSrc: ["'self'", "https://www.youtube.com", "https://www.youtube-nocookie.com"],
+        imgSrc: ["'self'", "data:", "https://i.ytimg.com", "https://*.ytimg.com", "https://*.scdn.co", "https://cdn.discordapp.com"],
+        mediaSrc: ["'self'", "blob:"],
+        connectSrc: ["'self'", "ws:", "wss:"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        frameAncestors: ["https://discord.com", "https://*.discord.com"]
+      }
+    },
+    crossOriginEmbedderPolicy: false,
+    crossOriginResourcePolicy: { policy: "cross-origin" }
+  }));
+  app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    if (origin && allowedOrigins.has(origin)) {
+      res.setHeader("Access-Control-Allow-Origin", origin);
+      res.setHeader("Vary", "Origin");
+      res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
+      res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+    }
+    if (req.method === "OPTIONS") {
+      res.sendStatus(origin && allowedOrigins.has(origin) ? 204 : 403);
+      return;
+    }
+    next();
+  });
+  app.use(express.json({ limit: "100kb" }));
+  app.use(express.urlencoded({ extended: false, limit: "100kb" }));
 
   app.get("/health", (_req, res) => {
     res.json({ ok: true, uptime: process.uptime(), timestamp: new Date().toISOString() });
@@ -101,10 +147,14 @@ export function startApiServer(env: Env, client: BotClient): Server | null {
     res.status(page.status).type("html").send(page.html);
   });
 
+  registerMusicActivityRoutes(app, env, activityAuth, musicActivityService);
+
   try {
     const server = app.listen(env.API_PORT, () => {
       logger.info({ port: env.API_PORT }, "Dashboard API listening");
     });
+
+    registerMusicActivitySockets(server, env, activityAuth, musicActivityService);
 
     server.on("error", (error) => {
       logger.error({ err: error, port: env.API_PORT }, "Dashboard API server error");
