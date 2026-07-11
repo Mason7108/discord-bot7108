@@ -1,4 +1,4 @@
-import type { ActivityAck, ActivityAuthResult, ActivityMediaItem, ActivitySearchPage } from "../types/activity";
+import type { ActivityAck, ActivityAuthResult, ActivityMediaItem, ActivityMediaResolution, ActivitySearchPage } from "../types/activity";
 
 async function readResponse<T>(response: Response): Promise<T> {
   const body = (await response.json()) as ActivityAck<T>;
@@ -40,13 +40,13 @@ export async function searchYouTube(token: string, query: string, pageToken?: st
   return readResponse<ActivitySearchPage>(response);
 }
 
-export async function resolveMedia(token: string, url: string): Promise<ActivityMediaItem> {
+export async function resolveMedia(token: string, url: string): Promise<ActivityMediaResolution> {
   const response = await fetch("/api/media/resolve", {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({ url })
   });
-  return readResponse<ActivityMediaItem>(response);
+  return readResponse<ActivityMediaResolution>(response);
 }
 
 export async function uploadAudio(

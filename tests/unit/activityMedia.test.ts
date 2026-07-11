@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Env } from "../../src/config/env.js";
 import { SpotifyService, parseSpotifyUrl } from "../../src/api/musicActivity/spotify.js";
 import { isSupportedAudioFile, safeUploadFilename } from "../../src/api/musicActivity/uploads.js";
-import { parseIsoDuration, parseYouTubeVideoId } from "../../src/api/musicActivity/youtube.js";
+import { parseIsoDuration, parseYouTubePlaylistId, parseYouTubeVideoId, YouTubeService } from "../../src/api/musicActivity/youtube.js";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -17,6 +17,44 @@ describe("Activity media parsing", () => {
   it("parses ISO 8601 video durations", () => {
     expect(parseIsoDuration("PT3M45S")).toBe(225);
     expect(parseIsoDuration("PT1H2M3S")).toBe(3723);
+  });
+
+  it("parses supported YouTube playlist URLs and rejects lookalike hosts", () => {
+    expect(parseYouTubePlaylistId(new URL("https://www.youtube.com/playlist?list=PL1234567890abcdef"))).toBe("PL1234567890abcdef");
+    expect(parseYouTubePlaylistId(new URL("https://youtube.com.evil.test/playlist?list=PL1234567890abcdef"))).toBeUndefined();
+  });
+
+  it("resolves public embeddable playlist videos in order", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ items: [
+          { contentDetails: { videoId: "M7lc1UVf-VE" } },
+          { contentDetails: { videoId: "dQw4w9WgXcQ" } }
+        ] })
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ items: [
+          {
+            id: "M7lc1UVf-VE",
+            snippet: { title: "First", channelTitle: "Channel", thumbnails: {} },
+            contentDetails: { duration: "PT1M" },
+            status: { embeddable: true, privacyStatus: "public" }
+          },
+          {
+            id: "dQw4w9WgXcQ",
+            snippet: { title: "Second", channelTitle: "Channel", thumbnails: {} },
+            contentDetails: { duration: "PT2M" },
+            status: { embeddable: true, privacyStatus: "public" }
+          }
+        ] })
+      });
+    vi.stubGlobal("fetch", fetchMock);
+    const items = await new YouTubeService({ YOUTUBE_API_KEY: "key" } as Env).getPlaylist("PL1234567890abcdef");
+
+    expect(items.map((item) => item.title)).toEqual(["First", "Second"]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("parses only supported Spotify metadata URLs", () => {
