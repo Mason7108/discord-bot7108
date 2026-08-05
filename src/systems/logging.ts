@@ -10,12 +10,29 @@ import {
 import type { GuildSettingsShape } from "../core/types.js";
 import { logger } from "../utils/logger.js";
 
-export async function sendModLog(guild: Guild, settings: GuildSettingsShape, embed: EmbedBuilder): Promise<void> {
-  if (!settings.modules.logging || !settings.modLogChannelId) {
+type LogCategory = keyof GuildSettingsShape["logging"];
+
+function resolveLogChannelId(settings: GuildSettingsShape, category: LogCategory): string | undefined {
+  const categorySettings = settings.logging[category];
+  if (!categorySettings.enabled) {
+    return undefined;
+  }
+
+  return categorySettings.channelId ?? settings.modLogChannelId;
+}
+
+export async function sendModLog(
+  guild: Guild,
+  settings: GuildSettingsShape,
+  embed: EmbedBuilder,
+  category: LogCategory = "moderation"
+): Promise<void> {
+  const channelId = resolveLogChannelId(settings, category);
+  if (!settings.modules.logging || !channelId) {
     return;
   }
 
-  const channel = guild.channels.cache.get(settings.modLogChannelId);
+  const channel = guild.channels.cache.get(channelId);
   if (!channel || channel.type !== ChannelType.GuildText) {
     return;
   }

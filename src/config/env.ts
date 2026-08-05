@@ -33,10 +33,15 @@ const optionalNumberWithDefault = (defaultValue: number, min: number, max: numbe
 const rawEnvSchema = z.object({
   BOT_TOKEN: z.string().optional(),
   DISCORD_TOKEN: z.string().optional(),
-  CLIENT_ID: z.string().min(1, "CLIENT_ID is required"),
+  CLIENT_ID: z.string().optional(),
+  DISCORD_CLIENT_ID: z.string().optional(),
   DISCORD_OAUTH_CLIENT_SECRET: z.string().optional(),
   DISCORD_CLIENT_SECRET: z.string().optional(),
   DISCORD_REDIRECT_URI: z.string().url("DISCORD_REDIRECT_URI must be a valid URL").optional(),
+  SESSION_SECRET: z.string().optional(),
+  INTERNAL_API_SECRET: z.string().optional(),
+  SUPPORT_SERVER_URL: z.string().url("SUPPORT_SERVER_URL must be a valid URL").optional(),
+  BOT_INVITE_PERMISSIONS: z.string().optional(),
   GUILD_ID: z.string().optional(),
   MONGO_URI: z.string().min(1, "MONGO_URI is required"),
   DEV_GUILD_ID: z.string().optional(),
@@ -116,6 +121,7 @@ const rawEnvSchema = z.object({
 
 export interface Env extends z.infer<typeof rawEnvSchema> {
   BOT_TOKEN: string;
+  CLIENT_ID: string;
   API_PORT: number;
 }
 
@@ -137,6 +143,7 @@ function normalizeProcessEnv(input: NodeJS.ProcessEnv): Record<string, unknown> 
 export function loadEnv(): Env {
   const parsed = rawEnvSchema.parse(normalizeProcessEnv(process.env));
   const botToken = parsed.BOT_TOKEN ?? parsed.DISCORD_TOKEN;
+  const clientId = parsed.CLIENT_ID ?? parsed.DISCORD_CLIENT_ID;
 
   if (!botToken || botToken.trim().length === 0) {
     throw new z.ZodError([
@@ -150,9 +157,22 @@ export function loadEnv(): Env {
     ]);
   }
 
+  if (!clientId || clientId.trim().length === 0) {
+    throw new z.ZodError([
+      {
+        code: "invalid_type",
+        expected: "string",
+        received: "undefined",
+        path: ["CLIENT_ID"],
+        message: "CLIENT_ID is required (or set DISCORD_CLIENT_ID)"
+      }
+    ]);
+  }
+
   return {
     ...parsed,
     BOT_TOKEN: botToken,
+    CLIENT_ID: clientId,
     API_PORT: parsed.API_PORT ?? parsed.PORT ?? 3000
   };
 }

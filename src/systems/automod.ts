@@ -31,11 +31,20 @@ function hasExcessiveCaps(content: string, maxCapsRatio: number): boolean {
   return caps / letters.length > maxCapsRatio;
 }
 
-function containsBlacklistedWord(content: string, words: string[]): string | null {
-  const normalized = content.toLowerCase();
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+export function containsBlockedWord(content: string, words: string[]): string | null {
   for (const word of words) {
-    if (normalized.includes(word.toLowerCase())) {
-      return word;
+    const normalizedWord = word.trim();
+    if (normalizedWord.length === 0 || normalizedWord.length > 80) {
+      continue;
+    }
+
+    const pattern = new RegExp(`(^|[^\\p{L}\\p{N}_])${escapeRegExp(normalizedWord)}(?=$|[^\\p{L}\\p{N}_])`, "iu");
+    if (pattern.test(content)) {
+      return normalizedWord;
     }
   }
   return null;
@@ -95,7 +104,7 @@ export async function runAutomod(message: Message, settings: GuildSettingsShape)
     violation = "Link blocked by automod";
   }
 
-  const blacklistedWord = containsBlacklistedWord(content, settings.automod.blacklist);
+  const blacklistedWord = containsBlockedWord(content, settings.automod.blacklist);
   if (!violation && blacklistedWord) {
     violation = `Blacklisted word: ${blacklistedWord}`;
   }
@@ -124,5 +133,5 @@ export async function runAutomod(message: Message, settings: GuildSettingsShape)
     )
     .setTimestamp();
 
-  await sendModLog(message.guild, settings, embed);
+  await sendModLog(message.guild, settings, embed, "automod");
 }

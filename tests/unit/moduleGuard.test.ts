@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { DEFAULT_AUTOMOD, DEFAULT_LOGGING, DEFAULT_MUSIC_SETTINGS, DEFAULT_TICKET_SETTINGS, DEFAULT_WELCOME } from "../../src/core/constants.js";
 import { isModuleEnabled } from "../../src/core/guards/moduleGuard.js";
 import type { CommandDefinition, GuildSettingsShape } from "../../src/core/types.js";
 
@@ -20,22 +21,19 @@ const settings: GuildSettingsShape = {
     fun: true,
     admin: true
   },
-  automod: {
-    enabled: true,
-    antiSpam: true,
-    antiRaid: true,
-    discordInviteFilter: true,
-    linkFilter: false,
-    capsFilter: true,
-    blacklist: [],
-    spamThreshold: 6,
-    spamIntervalSec: 8,
-    maxCapsRatio: 0.7
-  },
+  automod: DEFAULT_AUTOMOD,
+  welcome: DEFAULT_WELCOME,
+  logging: DEFAULT_LOGGING,
   staffRoleIds: [],
+  ticketSettings: DEFAULT_TICKET_SETTINGS,
   levelRoles: [],
   economyEnabled: true,
+  gamblingEnabled: true,
   music247Enabled: false,
+  musicSettings: DEFAULT_MUSIC_SETTINGS,
+  voiceCommands: {
+    enabled: false
+  },
   rolePolicy: {
     adminRoleIds: [],
     moderatorRoleIds: [],

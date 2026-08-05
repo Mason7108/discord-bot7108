@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canPostDiscordInviteLink, containsDiscordInviteLink } from "../../src/systems/automod.js";
+import { canPostDiscordInviteLink, containsBlockedWord, containsDiscordInviteLink } from "../../src/systems/automod.js";
 
 describe("automod discord invite filter", () => {
   it("detects common Discord invite links", () => {
@@ -13,5 +13,10 @@ describe("automod discord invite filter", () => {
     expect(canPostDiscordInviteLink("bot-owner", "guild-owner", "bot-owner")).toBe(true);
     expect(canPostDiscordInviteLink("guild-owner", "guild-owner", "bot-owner")).toBe(false);
     expect(canPostDiscordInviteLink("guild-owner", "guild-owner")).toBe(true);
+  });
+
+  it("matches blocked words on boundaries instead of inside unrelated words", () => {
+    expect(containsBlockedWord("please stop spam now", ["spam"])).toBe("spam");
+    expect(containsBlockedWord("this is spammable but not exact", ["spam"])).toBeNull();
   });
 });

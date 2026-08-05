@@ -16,6 +16,7 @@ A greenfield TypeScript Discord bot built with `discord.js v14`, `mongoose`, `ex
 - Giveaways with button join and auto winner selection
 - Utility + fun commands
 - Express dashboard API scaffold (`/health`, settings GET/PATCH)
+- Public website and secured Discord OAuth dashboard (`/`, `/dashboard`)
 - Button-based CAPTCHA verification flow (`/verify` web page + Discord button)
 - Terms of Service and Privacy Policy agreement flow (`/terms`, `/privacy` + Discord OAuth submit)
 - Welcome embed system for new members
@@ -102,9 +103,15 @@ The server-authoritative protocol uses `session:join`, `session:state`, `sync:re
 - `BOT_TOKEN`
 - `CLIENT_ID`
 - `MONGO_URI`
+- `SESSION_SECRET` (required for dashboard sessions)
 
 Optional:
 
+- `DISCORD_CLIENT_ID` (alias for `CLIENT_ID`)
+- `DISCORD_CLIENT_SECRET` or `DISCORD_OAUTH_CLIENT_SECRET` (required for Discord OAuth dashboard and terms login)
+- `DISCORD_REDIRECT_URI` (dashboard OAuth callback override; defaults to `BASE_URL/auth/dashboard/discord/callback`)
+- `SUPPORT_SERVER_URL` (public support server link)
+- `BOT_INVITE_PERMISSIONS` (Discord invite permission integer; defaults to `1374695058518`, not Administrator)
 - `DEV_GUILD_ID` (guild-scoped slash sync in development)
 - `API_PORT`
 - `DISCORD_CLIENT_SECRET` or `DISCORD_OAUTH_CLIENT_SECRET` (required for Discord Activity user auth)
@@ -311,5 +318,24 @@ https://your-app.up.railway.app/auth/discord/callback
 - Required bot permissions: main server `View Audit Log` for moderator/reason lookup, `Send Messages`, and normal moderation event access; appeal server `Manage Roles`, `Send Messages`, and `Create Instant Invite` only if `APPEAL_SERVER_INVITE` is not configured.
 - Required intents: `Guilds`, `GuildMembers`, `GuildModeration`, and message/interaction intents already configured by the bot.
 - `askai` is scaffolded and intentionally guarded behind `AI_API_KEY`.
-- Dashboard auth/OAuth is scaffold-only and must be hardened before production.
+- Dashboard auth uses Discord OAuth2 with `identify guilds`, encrypted server-side OAuth access tokens, HTTP-only cookies, SameSite cookie protection, CSRF checks, rate limiting, and server-side Discord permission verification.
 - Ticket history channel can be configured with `/config tickethistory channel:#your-channel`.
+
+## Website and Dashboard
+
+The website is served by the existing Express process so it can share the bot client and MongoDB models safely. Public pages are available at `/`, `/features`, `/commands`, `/status`, `/docs`, `/support`, `/terms-of-service`, `/privacy-policy`, and `/acceptable-use`.
+
+The dashboard starts at `/dashboard`. Users sign in through `/auth/dashboard/discord`, which requests only the Discord `identify` and `guilds` OAuth scopes. The callback URL must be added in the Discord Developer Portal:
+
+```text
+https://your-app.example.com/auth/dashboard/discord/callback
+```
+
+For local development, set `BASE_URL=http://localhost:3000` or set `DISCORD_REDIRECT_URI=http://localhost:3000/auth/dashboard/discord/callback`, then run:
+
+```bash
+npm run build
+npm start
+```
+
+The dashboard only permits changes after the server verifies the logged-in Discord user is still a member of the selected server and has `Manage Server` or `Administrator`. Moderation actions also verify the manager's permissions, the bot's permissions, role hierarchy, self-targeting, and server-owner protection before touching Discord.

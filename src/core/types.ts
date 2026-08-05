@@ -52,18 +52,70 @@ export interface VoiceTextToSpeechSettings {
   enabled: boolean;
 }
 
+export interface WelcomeSettings {
+  enabled: boolean;
+  channelId?: string;
+  message: string;
+  goodbyeEnabled: boolean;
+  goodbyeChannelId?: string;
+  goodbyeMessage: string;
+  dmEnabled: boolean;
+  dmMessage: string;
+  roleId?: string;
+}
+
+export interface LogCategorySettings {
+  enabled: boolean;
+  channelId?: string;
+}
+
+export interface LoggingSettings {
+  moderation: LogCategorySettings;
+  messageDelete: LogCategorySettings;
+  messageEdit: LogCategorySettings;
+  memberJoin: LogCategorySettings;
+  memberLeave: LogCategorySettings;
+  roleUpdates: LogCategorySettings;
+  channelUpdates: LogCategorySettings;
+  voiceActivity: LogCategorySettings;
+  dashboard: LogCategorySettings;
+  automod: LogCategorySettings;
+}
+
+export interface MusicSettings {
+  defaultVolume: number;
+  maximumQueueLength: number;
+  controllerChannelId?: string;
+  djRoleId?: string;
+  allowUserPlaylists: boolean;
+  leaveWhenEmpty: boolean;
+  idleDisconnectSeconds: number;
+}
+
+export interface TicketSettings {
+  openingChannelId?: string;
+  welcomeMessage: string;
+  maxOpenTicketsPerUser: number;
+  closeConfirmation: boolean;
+  transcriptsEnabled: boolean;
+}
+
 export interface GuildSettingsShape {
   guildId: string;
   modules: Record<ModuleName, boolean>;
   modLogChannelId?: string;
   automod: AutoModSettings;
+  welcome: WelcomeSettings;
+  logging: LoggingSettings;
   ticketCategoryId?: string;
   ticketHistoryChannelId?: string;
+  ticketSettings: TicketSettings;
   staffRoleIds: string[];
   levelRoles: Array<{ level: number; roleId: string }>;
   economyEnabled: boolean;
   gamblingEnabled: boolean;
   music247Enabled: boolean;
+  musicSettings: MusicSettings;
   voiceCommands: VoiceCommandSettings;
   voiceTextToSpeech: VoiceTextToSpeechSettings;
   rolePolicy: RolePolicy;

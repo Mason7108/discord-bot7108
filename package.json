@@ -6,13 +6,14 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "npm run typecheck && npm run build:bot && npm run activity:build",
+    "build": "npm run typecheck && npm run build:bot && npm run activity:build && node scripts/copy-web-assets.mjs",
     "typecheck": "tsc -p tsconfig.build.json --noEmit && tsc -p activity/tsconfig.json --noEmit",
     "build:bot": "tsc -p tsconfig.build.json",
     "activity:dev": "vite --config activity/vite.config.ts --host 0.0.0.0",
     "activity:build": "vite build --config activity/vite.config.ts",
     "activity:preview": "vite preview --config activity/vite.config.ts --host 0.0.0.0",
     "start": "node dist/index.js",
+    "check:env": "node scripts/check-env.mjs",
     "test": "vitest run",
     "test:activity:e2e": "node tests/e2e/activityLocal.mjs",
     "test:watch": "vitest"

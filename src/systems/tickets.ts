@@ -56,10 +56,10 @@ function ticketControlsRow(): ActionRowBuilder<ButtonBuilder> {
   );
 }
 
-function ticketPromptEmbed(): EmbedBuilder {
+function ticketPromptEmbed(settings: GuildSettingsShape): EmbedBuilder {
   return new EmbedBuilder()
     .setColor(0x57f287)
-    .setDescription("Thank you for contacting support.\nPlease describe your issue and wait for a response.")
+    .setDescription(settings.ticketSettings.welcomeMessage)
     .setFooter({ text: "Powered by bot7108" })
     .setTimestamp();
 }
@@ -261,7 +261,7 @@ async function closeOpenTicket(input: {
   }
 
   const settings = await getGuildSettings(input.guildId);
-  const transcript = await generateTranscript(input.channel);
+  const transcript = settings.ticketSettings.transcriptsEnabled ? await generateTranscript(input.channel) : "";
   const transcriptFilename = `ticket-${input.channel.id}-transcript.txt`;
 
   const ownerUser = await input.channel.client.users.fetch(record.ownerId).catch(() => null);
@@ -283,27 +283,33 @@ async function closeOpenTicket(input: {
     .addFields({ name: "Closed By", value: `<@${input.closedById}> (${input.closedByTag})` })
     .setTimestamp();
 
-  const inChannelTranscript = new AttachmentBuilder(Buffer.from(transcript, "utf8"), {
-    name: transcriptFilename
-  });
-  await input.channel.send({ embeds: [closeEmbed], files: [inChannelTranscript] });
+  if (settings.ticketSettings.transcriptsEnabled) {
+    const inChannelTranscript = new AttachmentBuilder(Buffer.from(transcript, "utf8"), {
+      name: transcriptFilename
+    });
+    await input.channel.send({ embeds: [closeEmbed], files: [inChannelTranscript] });
+  } else {
+    await input.channel.send({ embeds: [closeEmbed] });
+  }
 
-  const [dmResult, historyResult] = await Promise.all([
-    sendTicketCloseDm({
-      guild: input.channel.guild,
-      ownerId: record.ownerId,
-      embed: summaryEmbed,
-      transcriptText: transcript,
-      transcriptFilename
-    }),
-    sendTicketHistoryLog({
-      guild: input.channel.guild,
-      settings,
-      embed: summaryEmbed,
-      transcriptText: transcript,
-      transcriptFilename
-    })
-  ]);
+  const [dmResult, historyResult] = settings.ticketSettings.transcriptsEnabled
+    ? await Promise.all([
+        sendTicketCloseDm({
+          guild: input.channel.guild,
+          ownerId: record.ownerId,
+          embed: summaryEmbed,
+          transcriptText: transcript,
+          transcriptFilename
+        }),
+        sendTicketHistoryLog({
+          guild: input.channel.guild,
+          settings,
+          embed: summaryEmbed,
+          transcriptText: transcript,
+          transcriptFilename
+        })
+      ])
+    : [{ delivered: false }, { delivered: false }];
 
   record.status = "closed";
   record.closedAt = new Date();
@@ -387,14 +393,17 @@ export async function handleTicketCreateButton(
     return;
   }
 
-  const existing = await TicketRecordModel.findOne({
+  const openTickets = await TicketRecordModel.countDocuments({
     guildId: interaction.guild.id,
     ownerId: interaction.user.id,
     status: "open"
   });
 
-  if (existing) {
-    await interaction.reply({ content: `You already have an open ticket: <#${existing.channelId}>`, ephemeral: true });
+  if (openTickets >= settings.ticketSettings.maxOpenTicketsPerUser) {
+    await interaction.reply({
+      content: `You already have the maximum number of open tickets (${settings.ticketSettings.maxOpenTicketsPerUser}).`,
+      ephemeral: true
+    });
     return;
   }
 
@@ -415,7 +424,7 @@ export async function handleTicketCreateButton(
   await channel.send({
     // Ticket opener ping + action buttons matching common ticket-bot UX.
     content: `${interaction.user}`,
-    embeds: [ticketPromptEmbed()],
+    embeds: [ticketPromptEmbed(settings)],
     components: [ticketControlsRow()]
   });
 

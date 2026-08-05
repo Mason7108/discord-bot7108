@@ -153,9 +153,9 @@ const event: EventDefinition = {
       .setDescription(`${member.user.tag} joined the server.`)
       .setTimestamp();
 
-    await sendModLog(member.guild, settings, embed);
+    await sendModLog(member.guild, settings, embed, "memberJoin");
     await logInviteUsedByMemberJoin(member, env);
-    await sendWelcomeMessage(member, env);
+    await sendWelcomeMessage(member, env, settings);
   }
 };
 

@@ -177,7 +177,7 @@ const command: CommandDefinition = {
   module: "music",
   cooldownSec: 2,
   roleRequirement: "User",
-  async execute({ client, interaction }) {
+  async execute({ client, interaction, settings }) {
     const query = interaction.options.getString("query")?.trim();
     const attachment = interaction.options.getAttachment("file");
 
@@ -267,6 +267,12 @@ const command: CommandDefinition = {
     }
 
     const isAttachmentInput = Boolean(attachment);
+    const existingQueue = interaction.guildId ? distube.getQueue(interaction.guildId) : null;
+    if (existingQueue && existingQueue.songs.length >= settings.musicSettings.maximumQueueLength) {
+      await replyError(interaction, "Queue Full", `This server's queue limit is ${settings.musicSettings.maximumQueueLength} track(s).`);
+      return;
+    }
+
     const playSource = attachment?.url ?? normalizePlayQuery(query ?? "");
     const displayLabel = attachment ? getAttachmentDisplayName(attachment) : playSource;
     const resolveOptions = {
@@ -307,6 +313,8 @@ const command: CommandDefinition = {
         playableInput = await resolveYtDlpInput(distube, playSource, resolveOptions);
       }
       await distube.play(voiceCheck.voiceChannel, playableInput, playOptions);
+      const queue = interaction.guildId ? distube.getQueue(interaction.guildId) : null;
+      queue?.setVolume(settings.musicSettings.defaultVolume);
     } catch (error) {
       if (!botVoiceBeforeJoin && interaction.guildId) {
         distube.voices.leave(interaction.guildId);
@@ -322,6 +330,8 @@ const command: CommandDefinition = {
             playableInput = await resolveYtDlpInput(distube, playSource, resolveOptions);
           }
           await distube.play(voiceCheck.voiceChannel, playableInput, playOptions);
+          const queue = interaction.guildId ? distube.getQueue(interaction.guildId) : null;
+          queue?.setVolume(settings.musicSettings.defaultVolume);
         } catch (retryError) {
           const errorReason = formatPlaybackError(retryError);
           const helpfulHint =

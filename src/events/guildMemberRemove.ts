@@ -4,6 +4,7 @@ import type { EventDefinition } from "../core/types.js";
 import { UserProfileModel } from "../models/UserProfile.js";
 import { getGuildSettings } from "../core/services/guildSettingsService.js";
 import { sendModLog } from "../systems/logging.js";
+import { sendGoodbyeMessage } from "../systems/welcome.js";
 import { logger } from "../utils/logger.js";
 
 const env = loadEnv();
@@ -54,7 +55,8 @@ const event: EventDefinition = {
       .setDescription(`${member.user.tag} left the server.`)
       .setTimestamp();
 
-    await sendModLog(member.guild, settings, embed);
+    await sendModLog(member.guild, settings, embed, "memberLeave");
+    await sendGoodbyeMessage(member, settings);
   }
 };
 

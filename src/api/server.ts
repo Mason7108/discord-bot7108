@@ -1,94 +1,61 @@
 import express from "express";
 import helmet from "helmet";
 import type { Server } from "node:http";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { Env } from "../config/env.js";
 import type { BotClient } from "../core/types.js";
-import { getGuildSettings, updateGuildSettings } from "../core/services/guildSettingsService.js";
-import { MODULE_NAMES } from "../core/constants.js";
 import { registerTermsAgreementRoutes } from "../systems/termsAgreement.js";
 import { buildVerifyPage, completeVerification } from "../systems/verification.js";
 import { logger } from "../utils/logger.js";
+import { registerDashboardRoutes } from "./dashboardRoutes.js";
 import { ActivityAuthenticator } from "./musicActivity/auth.js";
 import { registerMusicActivityRoutes } from "./musicActivity/routes.js";
 import { createMusicActivityService } from "./musicActivity/service.js";
 import { registerMusicActivitySockets } from "./musicActivity/socket.js";
 
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function pickUpdatableSettings(body: unknown) {
-  if (!isObject(body)) {
-    return {};
-  }
-
-  const payload: Record<string, unknown> = {};
-  const allowed = [
-    "modules",
-    "modLogChannelId",
-    "automod",
-    "ticketCategoryId",
-    "ticketHistoryChannelId",
-    "staffRoleIds",
-    "levelRoles",
-    "economyEnabled",
-    "music247Enabled",
-    "rolePolicy"
-  ];
-
-  for (const key of allowed) {
-    if (key in body) {
-      payload[key] = body[key];
-    }
-  }
-
-  if (isObject(payload.modules)) {
-    const normalized: Record<string, boolean> = {};
-    for (const name of MODULE_NAMES) {
-      const raw = payload.modules[name];
-      if (typeof raw === "boolean") {
-        normalized[name] = raw;
-      }
-    }
-    payload.modules = normalized;
-  }
-
-  return payload;
-}
-
 export function startApiServer(env: Env, client: BotClient): Server | null {
   const app = express();
+  const dirname = path.dirname(fileURLToPath(import.meta.url));
+  const publicDir = path.resolve(dirname, "..", "web", "public");
   const musicActivityService = createMusicActivityService();
   const activityAuth = new ActivityAuthenticator(env, client);
   const configuredOrigins = env.ACTIVITY_ALLOWED_ORIGINS?.split(",").map((value) => value.trim()).filter(Boolean) ?? [];
-  const allowedOrigins = new Set([
-    `https://${env.CLIENT_ID}.discordsays.com`,
-    env.FRONTEND_ORIGIN,
-    env.PUBLIC_ACTIVITY_URL,
-    ...configuredOrigins,
-    ...(env.NODE_ENV !== "production" ? ["http://localhost:5173", "http://127.0.0.1:5173"] : [])
-  ].filter((value): value is string => Boolean(value)));
+  const allowedOrigins = new Set(
+    [
+      `https://${env.CLIENT_ID}.discordsays.com`,
+      env.FRONTEND_ORIGIN,
+      env.PUBLIC_ACTIVITY_URL,
+      ...configuredOrigins,
+      ...(env.NODE_ENV !== "production" ? ["http://localhost:5173", "http://127.0.0.1:5173"] : [])
+    ].filter((value): value is string => Boolean(value))
+  );
 
   app.disable("x-powered-by");
-  app.use(helmet({
-    contentSecurityPolicy: {
-      directives: {
-        defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "https://www.youtube.com", "https://s.ytimg.com"],
-        frameSrc: ["'self'", "https://www.youtube.com", "https://www.youtube-nocookie.com"],
-        imgSrc: ["'self'", "data:", "https://i.ytimg.com", "https://*.ytimg.com", "https://*.scdn.co", "https://cdn.discordapp.com"],
-        mediaSrc: ["'self'", "blob:"],
-        connectSrc: ["'self'", "ws:", "wss:"],
-        styleSrc: ["'self'", "'unsafe-inline'"],
-        frameAncestors: ["https://discord.com", "https://*.discord.com"]
-      }
-    },
-    crossOriginEmbedderPolicy: false,
-    crossOriginResourcePolicy: { policy: "cross-origin" },
-    // Discord Activities run inside a discord.com iframe. CSP controls the
-    // allowed parents; X-Frame-Options: SAMEORIGIN would block that embed.
-    xFrameOptions: false
-  }));
+  app.set("trust proxy", 1);
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc: ["'self'", "https://www.youtube.com", "https://s.ytimg.com"],
+          frameSrc: ["'self'", "https://www.youtube.com", "https://www.youtube-nocookie.com"],
+          imgSrc: ["'self'", "data:", "https://i.ytimg.com", "https://*.ytimg.com", "https://*.scdn.co", "https://cdn.discordapp.com"],
+          mediaSrc: ["'self'", "blob:"],
+          connectSrc: ["'self'", "ws:", "wss:"],
+          styleSrc: ["'self'", "'unsafe-inline'"],
+          formAction: ["'self'"],
+          baseUri: ["'self'"],
+          frameAncestors: ["https://discord.com", "https://*.discord.com"]
+        }
+      },
+      crossOriginEmbedderPolicy: false,
+      crossOriginResourcePolicy: { policy: "cross-origin" },
+      // Discord Activities run inside a discord.com iframe. CSP controls the
+      // allowed parents; X-Frame-Options: SAMEORIGIN would block that embed.
+      xFrameOptions: false
+    })
+  );
   app.use((req, res, next) => {
     const origin = req.headers.origin;
     if (origin && allowedOrigins.has(origin)) {
@@ -111,17 +78,6 @@ export function startApiServer(env: Env, client: BotClient): Server | null {
   });
 
   registerTermsAgreementRoutes(app, env, client);
-
-  app.get("/api/guilds/:guildId/settings", async (req, res) => {
-    const settings = await getGuildSettings(req.params.guildId);
-    res.json(settings);
-  });
-
-  app.patch("/api/guilds/:guildId/settings", async (req, res) => {
-    const payload = pickUpdatableSettings(req.body);
-    const updated = await updateGuildSettings(req.params.guildId, payload as never);
-    res.json(updated);
-  });
 
   app.get("/verify", (req, res) => {
     const userId = typeof req.query.userId === "string" ? req.query.userId : undefined;
@@ -151,6 +107,40 @@ export function startApiServer(env: Env, client: BotClient): Server | null {
   });
 
   registerMusicActivityRoutes(app, env, activityAuth, musicActivityService);
+  registerDashboardRoutes(app, env, client);
+
+  app.use(express.static(publicDir, { index: false, maxAge: env.NODE_ENV === "production" ? "1h" : 0 }));
+
+  app.get(
+    [
+      "/",
+      "/features",
+      "/commands",
+      "/status",
+      "/docs",
+      "/support",
+      "/dashboard",
+      "/dashboard/:guildId",
+      "/dashboard/:guildId/:section",
+      "/terms-of-service",
+      "/privacy-policy",
+      "/acceptable-use",
+      "/unauthorized",
+      "/not-found"
+    ],
+    (_req, res) => {
+      res.sendFile(path.join(publicDir, "index.html"));
+    }
+  );
+
+  app.use((req, res) => {
+    if (req.path.startsWith("/api/")) {
+      res.status(404).json({ ok: false, error: "Route not found." });
+      return;
+    }
+
+    res.status(404).sendFile(path.join(publicDir, "index.html"));
+  });
 
   try {
     const server = app.listen(env.API_PORT, () => {

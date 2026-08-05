@@ -135,8 +135,14 @@ async function resolveMessageLogChannel(input: {
   message: Message;
   env: Env;
   settings: GuildSettingsShape;
+  category: "messageDelete" | "messageEdit";
 }): Promise<TextChannel | null> {
-  const channelId = input.env.MESSAGE_LOG_CHANNEL_ID ?? input.settings.modLogChannelId;
+  const categorySettings = input.settings.logging[input.category];
+  if (!input.settings.modules.logging || !categorySettings.enabled) {
+    return null;
+  }
+
+  const channelId = categorySettings.channelId ?? input.env.MESSAGE_LOG_CHANNEL_ID ?? input.settings.modLogChannelId;
   if (!channelId) {
     logger.error({ guildId: input.message.guildId }, "Message log channel is not configured (set MESSAGE_LOG_CHANNEL_ID)");
     return null;
@@ -172,7 +178,7 @@ export async function logDeletedMessage(input: {
     return;
   }
 
-  const channel = await resolveMessageLogChannel(input);
+  const channel = await resolveMessageLogChannel({ ...input, category: "messageDelete" });
   if (!channel) {
     return;
   }
@@ -246,7 +252,8 @@ export async function logEditedMessage(input: {
   const channel = await resolveMessageLogChannel({
     message: newMessage,
     env: input.env,
-    settings: input.settings
+    settings: input.settings,
+    category: "messageEdit"
   });
   if (!channel) {
     return;

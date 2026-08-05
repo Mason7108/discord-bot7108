@@ -4,6 +4,7 @@ import type { EventDefinition } from "../core/types.js";
 import { checkAndSetCooldown } from "../core/guards/cooldownGuard.js";
 import { isModuleEnabled } from "../core/guards/moduleGuard.js";
 import { hasPermissionForCommand } from "../core/guards/permissionGuard.js";
+import { evaluateCommandOverride, getCommandOverride } from "../core/services/commandSettingsService.js";
 import { getActiveCommandRestriction } from "../core/services/commandRestrictionService.js";
 import { getGuildSettings } from "../core/services/guildSettingsService.js";
 import { hasAcceptedTerms, TERMS_REQUIRED_MESSAGE } from "../core/services/termsAgreementService.js";
@@ -295,6 +296,34 @@ const event: EventDefinition = {
     }
 
     const member = interaction.member as GuildMember;
+
+    if (
+      command.module === "music" &&
+      settings.musicSettings.djRoleId &&
+      !member.permissions.has("Administrator") &&
+      !member.permissions.has("ManageGuild") &&
+      !member.roles.cache.has(settings.musicSettings.djRoleId)
+    ) {
+      await interaction.reply({ embeds: [warningEmbed("Music Restricted", "This server requires the DJ role for music commands.")], ephemeral: true });
+      return;
+    }
+
+    const commandOverride = await getCommandOverride(interaction.guildId, interaction.commandName).catch((error) => {
+      logger.error({ err: error, guildId: interaction.guildId, command: interaction.commandName }, "Failed to check command settings");
+      return null;
+    });
+    const overrideCheck = evaluateCommandOverride({
+      override: commandOverride,
+      commandName: interaction.commandName,
+      member,
+      channelId: interaction.channelId
+    });
+
+    if (!overrideCheck.ok) {
+      await interaction.reply({ embeds: [warningEmbed("Command Unavailable", overrideCheck.reason)], ephemeral: true });
+      return;
+    }
+
     const botMember = interaction.guild.members.me;
     const permissionCheck = hasPermissionForCommand(command, member, settings, botMember);
 
@@ -308,7 +337,9 @@ const event: EventDefinition = {
       return;
     }
 
-    const cooldown = checkAndSetCooldown(client.cooldowns, interaction.commandName, interaction.user.id, command.cooldownSec ?? 0);
+    const cooldownSeconds =
+      overrideCheck.cooldownSec && overrideCheck.cooldownSec > 0 ? overrideCheck.cooldownSec : command.cooldownSec ?? 0;
+    const cooldown = checkAndSetCooldown(client.cooldowns, interaction.commandName, interaction.user.id, cooldownSeconds);
     if (!cooldown.ok) {
       await interaction.reply({
         embeds: [warningEmbed("Cooldown", `Try again in ${msToHuman(cooldown.msRemaining)}.`)],
