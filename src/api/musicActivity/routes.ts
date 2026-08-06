@@ -182,8 +182,11 @@ export function registerMusicActivityRoutes(
 
   const activityDistDir = path.resolve(process.cwd(), "activity", "dist");
   if (existsSync(activityDistDir)) {
-    app.use(express.static(activityDistDir, { index: false, maxAge: env.NODE_ENV === "production" ? "1h" : 0 }));
-    app.get(["/", "/activity", "/activity/*"], (_req, res) => res.sendFile(path.join(activityDistDir, "index.html")));
+    app.use(
+      "/activity",
+      express.static(activityDistDir, { index: false, maxAge: env.NODE_ENV === "production" ? "1h" : 0 })
+    );
+    app.get(["/activity", "/activity/*"], (_req, res) => res.sendFile(path.join(activityDistDir, "index.html")));
   }
 
   app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {

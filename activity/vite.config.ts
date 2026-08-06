@@ -10,6 +10,7 @@ export default defineConfig(({ mode }) => {
 
   return {
     root: __dirname,
+    base: "/activity/",
     envDir: repoRoot,
     plugins: [react(), tailwindcss()],
     define: {
