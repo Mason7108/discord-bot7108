@@ -39,7 +39,7 @@ const checks = [
   { label: "Mongo database", keys: ["MONGO_URI"], required: true },
   { label: "Dashboard session secret", keys: ["SESSION_SECRET"], required: true },
   { label: "Public base URL", keys: ["BASE_URL"], required: true },
-  { label: "Dashboard OAuth redirect override", keys: ["DISCORD_REDIRECT_URI"], required: false },
+  { label: "Dashboard OAuth redirect override", keys: ["DASHBOARD_DISCORD_REDIRECT_URI"], required: false },
   { label: "Support server link", keys: ["SUPPORT_SERVER_URL"], required: false },
   { label: "Bot invite permissions", keys: ["BOT_INVITE_PERMISSIONS"], required: false }
 ];

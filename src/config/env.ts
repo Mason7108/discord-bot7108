@@ -38,6 +38,7 @@ const rawEnvSchema = z.object({
   DISCORD_OAUTH_CLIENT_SECRET: z.string().optional(),
   DISCORD_CLIENT_SECRET: z.string().optional(),
   DISCORD_REDIRECT_URI: z.string().url("DISCORD_REDIRECT_URI must be a valid URL").optional(),
+  DASHBOARD_DISCORD_REDIRECT_URI: z.string().url("DASHBOARD_DISCORD_REDIRECT_URI must be a valid URL").optional(),
   SESSION_SECRET: z.string().optional(),
   INTERNAL_API_SECRET: z.string().optional(),
   SUPPORT_SERVER_URL: z.string().url("SUPPORT_SERVER_URL must be a valid URL").optional(),

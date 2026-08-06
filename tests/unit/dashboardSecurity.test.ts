@@ -10,7 +10,12 @@ import {
 } from "../../src/api/dashboardPermissions.js";
 import { dashboardSettingsPatchSchema } from "../../src/api/dashboardValidation.js";
 import { checkRateLimit, resetRateLimitBucketsForTests } from "../../src/api/rateLimit.js";
-import { hashDashboardValue, requireCsrf, requireDashboardAuth } from "../../src/api/dashboardSecurity.js";
+import {
+  buildDashboardRedirectUri,
+  hashDashboardValue,
+  requireCsrf,
+  requireDashboardAuth
+} from "../../src/api/dashboardSecurity.js";
 
 function mockResponse() {
   return {
@@ -96,6 +101,22 @@ describe("dashboard security helpers", () => {
     );
 
     expect(res.statusCode).toBe(403);
+  });
+
+  it("keeps dashboard OAuth separate from other Discord callbacks", () => {
+    const req = { protocol: "https", get: () => "fallback.example" } as any;
+    const env = {
+      BASE_URL: "https://bot.example",
+      DISCORD_REDIRECT_URI: "https://bot.example/auth/discord/callback"
+    } as any;
+
+    expect(buildDashboardRedirectUri(env, req)).toBe("https://bot.example/auth/dashboard/discord/callback");
+    expect(
+      buildDashboardRedirectUri(
+        { ...env, DASHBOARD_DISCORD_REDIRECT_URI: "https://dashboard.example/oauth/callback" },
+        req
+      )
+    ).toBe("https://dashboard.example/oauth/callback");
   });
 
   it("filters manageable guilds by server management permissions", () => {

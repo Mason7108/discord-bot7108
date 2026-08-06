@@ -185,8 +185,8 @@ function decodeSignedPayload(secret: string, value: string | undefined): OAuthSt
 }
 
 export function buildDashboardRedirectUri(env: Env, req: Request): string {
-  if (env.DISCORD_REDIRECT_URI) {
-    return env.DISCORD_REDIRECT_URI;
+  if (env.DASHBOARD_DISCORD_REDIRECT_URI) {
+    return env.DASHBOARD_DISCORD_REDIRECT_URI;
   }
 
   const baseUrl = env.BASE_URL ?? `${req.protocol}://${req.get("host")}`;

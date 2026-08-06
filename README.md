@@ -109,7 +109,7 @@ Optional:
 
 - `DISCORD_CLIENT_ID` (alias for `CLIENT_ID`)
 - `DISCORD_CLIENT_SECRET` or `DISCORD_OAUTH_CLIENT_SECRET` (required for Discord OAuth dashboard and terms login)
-- `DISCORD_REDIRECT_URI` (dashboard OAuth callback override; defaults to `BASE_URL/auth/dashboard/discord/callback`)
+- `DASHBOARD_DISCORD_REDIRECT_URI` (dashboard OAuth callback override; defaults to `BASE_URL/auth/dashboard/discord/callback`)
 - `SUPPORT_SERVER_URL` (public support server link)
 - `BOT_INVITE_PERMISSIONS` (Discord invite permission integer; defaults to `1374695058518`, not Administrator)
 - `DEV_GUILD_ID` (guild-scoped slash sync in development)
@@ -331,7 +331,7 @@ The dashboard starts at `/dashboard`. Users sign in through `/auth/dashboard/dis
 https://your-app.example.com/auth/dashboard/discord/callback
 ```
 
-For local development, set `BASE_URL=http://localhost:3000` or set `DISCORD_REDIRECT_URI=http://localhost:3000/auth/dashboard/discord/callback`, then run:
+For local development, set `BASE_URL=http://localhost:3000` or set `DASHBOARD_DISCORD_REDIRECT_URI=http://localhost:3000/auth/dashboard/discord/callback`, then run:
 
 ```bash
 npm run build
