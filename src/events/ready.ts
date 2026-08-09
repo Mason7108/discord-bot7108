@@ -1,4 +1,5 @@
 import { loadEnv } from "../config/env.js";
+import { applyBotPresence, getBotControlSettings } from "../core/services/botControlService.js";
 import type { EventDefinition } from "../core/types.js";
 import { ensureInviteGeneratorMessage } from "../systems/inviteGenerator.js";
 import { primeInviteCaches } from "../systems/inviteLogs.js";
@@ -13,6 +14,12 @@ const event: EventDefinition = {
   once: true,
   async execute(client) {
     logger.info({ user: client.user?.tag, id: client.user?.id }, "Bot ready");
+    await getBotControlSettings()
+      .then((settings) => applyBotPresence(client, settings))
+      .catch((error) => {
+        logger.error({ err: error }, "Failed to restore bot presence");
+      });
+
     await ensureVerificationMessage(client, env).catch((error) => {
       logger.error({ err: error }, "Failed to ensure verification message");
     });

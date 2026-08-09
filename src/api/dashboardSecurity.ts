@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import type { NextFunction, Request, Response } from "express";
 import type { Env } from "../config/env.js";
+import type { BotClient } from "../core/types.js";
 import { DashboardSessionModel, type DashboardSessionDocument } from "../models/DashboardSession.js";
 
 export const DASHBOARD_SESSION_COOKIE = "bot7108_dashboard_session";
@@ -323,6 +324,45 @@ export function requireDashboardAuth(req: Request, res: Response, next: NextFunc
   }
 
   next();
+}
+
+export function resolveBotOwnerId(env: Env, client: BotClient): string | undefined {
+  const configuredOwnerId = env.BOT_OWNER_ID?.trim();
+  if (configuredOwnerId) {
+    return configuredOwnerId;
+  }
+
+  const applicationOwner = client.application?.owner;
+  if (!applicationOwner) {
+    return undefined;
+  }
+
+  if ("ownerId" in applicationOwner && typeof applicationOwner.ownerId === "string") {
+    return applicationOwner.ownerId;
+  }
+
+  return "id" in applicationOwner && typeof applicationOwner.id === "string" ? applicationOwner.id : undefined;
+}
+
+export function isDashboardOwner(env: Env, client: BotClient, userId: string | undefined): boolean {
+  const ownerId = resolveBotOwnerId(env, client);
+  return Boolean(ownerId && userId && ownerId === userId);
+}
+
+export function requireDashboardOwner(env: Env, client: BotClient) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    if (!req.dashboard) {
+      res.status(401).json({ ok: false, error: "Authentication required." });
+      return;
+    }
+
+    if (!isDashboardOwner(env, client, req.dashboard.user.id)) {
+      res.status(403).json({ ok: false, error: "Bot owner access required." });
+      return;
+    }
+
+    next();
+  };
 }
 
 export function requireCsrf(req: Request, res: Response, next: NextFunction): void {

@@ -9,9 +9,15 @@ import {
 } from "discord.js";
 import type { Express, NextFunction, Request, Response } from "express";
 import mongoose from "mongoose";
+import multer from "multer";
 import crypto from "node:crypto";
 import type { Env } from "../config/env.js";
 import { MODULE_NAMES } from "../core/constants.js";
+import {
+  applyBotPresence,
+  getBotControlSettings,
+  saveBotControlSettings
+} from "../core/services/botControlService.js";
 import {
   evaluateCommandOverride,
   getCommandOverride,
@@ -39,8 +45,10 @@ import {
   getDashboardSecret,
   getOAuthClientSecret,
   isDiscordId,
+  isDashboardOwner,
   requireCsrf,
   requireDashboardAuth,
+  requireDashboardOwner,
   safeReturnTo,
   serializeDashboardUser,
   attachDashboardSession,
@@ -60,6 +68,9 @@ import {
   dashboardSettingsPatchSchema,
   formatZodError,
   moderationActionSchema,
+  ownerMessageSchema,
+  ownerPresenceSchema,
+  ownerProfileSchema,
   supportSubmissionSchema
 } from "./dashboardValidation.js";
 import { rateLimit } from "./rateLimit.js";
@@ -72,6 +83,48 @@ function asyncHandler(fn: (req: Request, res: Response, next: NextFunction) => P
 
 function safeJsonError(res: Response, status: number, error: string): void {
   res.status(status).json({ ok: false, error });
+}
+
+const ownerAvatarUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { files: 1, fileSize: 2 * 1024 * 1024 },
+  fileFilter: (_req, file, callback) => {
+    const allowed = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+    callback(null, allowed.has(file.mimetype));
+  }
+});
+
+function isSupportedAvatar(buffer: Buffer): boolean {
+  const png = buffer.length >= 8 && buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+  const jpeg = buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
+  const header = buffer.subarray(0, 12).toString("ascii");
+  const gif = header.startsWith("GIF87a") || header.startsWith("GIF89a");
+  const webp = header.startsWith("RIFF") && header.slice(8, 12) === "WEBP";
+  return png || jpeg || gif || webp;
+}
+
+function serializeOwnerGuilds(client: BotClient) {
+  return [...client.guilds.cache.values()]
+    .map((guild) => {
+      const botMember = guild.members.me;
+      const channels = guild.channels.cache
+        .filter((channel) => {
+          if (!botMember || (channel.type !== ChannelType.GuildText && channel.type !== ChannelType.GuildAnnouncement)) {
+            return false;
+          }
+          return channel.permissionsFor(botMember)?.has([PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages]) === true;
+        })
+        .map((channel) => ({ id: channel.id, name: channel.name }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+      return {
+        id: guild.id,
+        name: guild.name,
+        iconUrl: serializeGuildIcon(guild),
+        channels
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 async function fetchDiscordJson<T>(url: string, accessToken: string): Promise<T> {
@@ -553,6 +606,7 @@ export function registerDashboardRoutes(app: Express, env: Env, client: BotClien
   app.use((req, res, next) => {
     void attachDashboardSession(env, req, res, next);
   });
+  const requireOwner = requireDashboardOwner(env, client);
 
   app.get("/api/public/config", (_req, res) => {
     res.json({
@@ -717,7 +771,10 @@ export function registerDashboardRoutes(app: Express, env: Env, client: BotClien
     res.json({
       ok: true,
       authenticated: true,
-      user: serializeDashboardUser(req.dashboard.user),
+      user: {
+        ...serializeDashboardUser(req.dashboard.user),
+        isOwner: isDashboardOwner(env, client, req.dashboard.user.id)
+      },
       csrfToken: req.dashboard.csrfToken
     });
   });
@@ -749,6 +806,228 @@ export function registerDashboardRoutes(app: Express, env: Env, client: BotClien
 
       res.json({ ok: true, guilds: manageable });
     })
+  );
+
+  app.get(
+    "/api/dashboard/owner/console",
+    requireDashboardAuth,
+    requireOwner,
+    rateLimit("dashboard-owner-read", 60, 60 * 1_000),
+    asyncHandler(async (_req, res) => {
+      const botUser = client.user;
+      if (!botUser || !client.isReady()) {
+        safeJsonError(res, 503, "bot7108 is not ready.");
+        return;
+      }
+
+      const [presence, recentAudit] = await Promise.all([
+        getBotControlSettings(),
+        DashboardAuditEventModel.find({ action: /^owner\./ }).sort({ createdAt: -1 }).limit(20).lean()
+      ]);
+
+      res.json({
+        ok: true,
+        bot: {
+          id: botUser.id,
+          username: botUser.username,
+          avatarUrl: botUser.displayAvatarURL({ extension: "png", size: 256 })
+        },
+        presence,
+        guilds: serializeOwnerGuilds(client),
+        recentAudit: recentAudit.map((event) => ({
+          id: String(event._id),
+          action: event.action,
+          actorDisplayName: event.actorDisplayName,
+          targetType: event.targetType,
+          targetId: event.targetId,
+          createdAt: event.createdAt
+        }))
+      });
+    })
+  );
+
+  app.post(
+    "/api/dashboard/owner/messages",
+    requireDashboardAuth,
+    requireOwner,
+    requireCsrf,
+    rateLimit("dashboard-owner-message", 10, 60 * 1_000),
+    asyncHandler(async (req, res) => {
+      const parsed = ownerMessageSchema.safeParse(req.body);
+      if (!parsed.success) {
+        safeJsonError(res, 400, formatZodError(parsed.error));
+        return;
+      }
+
+      const guild = client.guilds.cache.get(parsed.data.guildId);
+      const channel = guild?.channels.cache.get(parsed.data.channelId);
+      const botMember = guild?.members.me;
+      if (
+        !guild ||
+        !channel ||
+        !botMember ||
+        (channel.type !== ChannelType.GuildText && channel.type !== ChannelType.GuildAnnouncement) ||
+        channel.permissionsFor(botMember)?.has([PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages]) !== true
+      ) {
+        safeJsonError(res, 403, "bot7108 cannot send messages to that channel.");
+        return;
+      }
+
+      const message = await channel.send({
+        content: parsed.data.content,
+        allowedMentions: { parse: [], repliedUser: false }
+      });
+
+      await recordDashboardAuditEvent({
+        guildId: guild.id,
+        actorUserId: req.dashboard!.user.id,
+        actorDisplayName: req.dashboard!.user.displayName,
+        action: "owner.message.send",
+        targetType: "channel",
+        targetId: channel.id,
+        newValue: { contentLength: parsed.data.content.length },
+        metadata: { messageId: message.id }
+      });
+
+      logger.info({ guildId: guild.id, channelId: channel.id, messageId: message.id }, "Owner sent a bot message");
+      res.status(201).json({ ok: true, message: "Message sent.", messageId: message.id });
+    })
+  );
+
+  app.patch(
+    "/api/dashboard/owner/presence",
+    requireDashboardAuth,
+    requireOwner,
+    requireCsrf,
+    rateLimit("dashboard-owner-presence", 30, 60 * 60 * 1_000),
+    asyncHandler(async (req, res) => {
+      const parsed = ownerPresenceSchema.safeParse(req.body);
+      if (!parsed.success) {
+        safeJsonError(res, 400, formatZodError(parsed.error));
+        return;
+      }
+      if (!client.user || !client.isReady()) {
+        safeJsonError(res, 503, "bot7108 is not ready.");
+        return;
+      }
+
+      const previous = await getBotControlSettings();
+      const updated = await saveBotControlSettings({
+        ...parsed.data,
+        updatedById: req.dashboard!.user.id
+      });
+      applyBotPresence(client, updated);
+
+      await recordDashboardAuditEvent({
+        guildId: "global",
+        actorUserId: req.dashboard!.user.id,
+        actorDisplayName: req.dashboard!.user.displayName,
+        action: "owner.presence.update",
+        targetType: "bot_presence",
+        targetId: client.user.id,
+        previousValue: previous,
+        newValue: updated
+      });
+
+      res.json({ ok: true, message: "Bot presence updated.", presence: updated });
+    })
+  );
+
+  app.patch(
+    "/api/dashboard/owner/profile",
+    requireDashboardAuth,
+    requireOwner,
+    requireCsrf,
+    rateLimit("dashboard-owner-profile", 2, 60 * 60 * 1_000),
+    asyncHandler(async (req, res) => {
+      const parsed = ownerProfileSchema.safeParse(req.body);
+      if (!parsed.success) {
+        safeJsonError(res, 400, formatZodError(parsed.error));
+        return;
+      }
+
+      const botUser = client.user;
+      if (!botUser || !client.isReady()) {
+        safeJsonError(res, 503, "bot7108 is not ready.");
+        return;
+      }
+
+      const previousUsername = botUser.username;
+      if (parsed.data.username !== previousUsername) {
+        try {
+          await botUser.setUsername(parsed.data.username);
+        } catch (error) {
+          logger.warn({ err: error }, "Discord rejected owner bot username update");
+          safeJsonError(res, 429, "Discord rejected the username update. Try again later.");
+          return;
+        }
+      }
+
+      await recordDashboardAuditEvent({
+        guildId: "global",
+        actorUserId: req.dashboard!.user.id,
+        actorDisplayName: req.dashboard!.user.displayName,
+        action: "owner.profile.username",
+        targetType: "bot_profile",
+        targetId: botUser.id,
+        previousValue: { username: previousUsername },
+        newValue: { username: botUser.username }
+      });
+
+      res.json({ ok: true, message: "Bot username updated.", username: botUser.username });
+    })
+  );
+
+  app.post(
+    "/api/dashboard/owner/avatar",
+    requireDashboardAuth,
+    requireOwner,
+    requireCsrf,
+    rateLimit("dashboard-owner-avatar", 2, 60 * 60 * 1_000),
+    (req, res, next) => {
+      ownerAvatarUpload.single("avatar")(req, res, (uploadError) => {
+        if (uploadError) {
+          safeJsonError(res, 400, uploadError instanceof multer.MulterError ? "Avatar must be a supported image under 2 MB." : "Invalid avatar upload.");
+          return;
+        }
+
+        void (async () => {
+          const botUser = client.user;
+          if (!botUser || !client.isReady()) {
+            safeJsonError(res, 503, "bot7108 is not ready.");
+            return;
+          }
+          if (!req.file || !isSupportedAvatar(req.file.buffer)) {
+            safeJsonError(res, 400, "Avatar must be a valid PNG, JPEG, GIF, or WebP image.");
+            return;
+          }
+
+          try {
+            await botUser.setAvatar(req.file.buffer);
+          } catch (error) {
+            logger.warn({ err: error }, "Discord rejected owner bot avatar update");
+            safeJsonError(res, 429, "Discord rejected the avatar update. Try again later.");
+            return;
+          }
+
+          await recordDashboardAuditEvent({
+            guildId: "global",
+            actorUserId: req.dashboard!.user.id,
+            actorDisplayName: req.dashboard!.user.displayName,
+            action: "owner.profile.avatar",
+            targetType: "bot_profile",
+            targetId: botUser.id,
+            newValue: { changed: true }
+          });
+
+          res.json({
+            ok: true,
+            message: "Bot avatar updated.",
+            avatarUrl: botUser.displayAvatarURL({ extension: "png", size: 256 })
+          });
+        })().catch(next);
+      });
+    }
   );
 
   app.get(

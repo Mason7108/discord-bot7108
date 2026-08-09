@@ -127,7 +127,7 @@ Optional:
 - `UPLOAD_DIRECTORY` (development upload path, default `data/activity-uploads`)
 - `VITE_DISCORD_CLIENT_ID` (optional; Vite falls back to `CLIENT_ID`)
 - `VITE_ACTIVITY_API_BASE_URL` (optional Activity API origin override)
-- `BOT_OWNER_ID` (user allowed to post Discord invite links; falls back to the Discord server owner if unset)
+- `BOT_OWNER_ID` (optional explicit dashboard owner and invite-filter bypass user; the private owner console otherwise falls back to the Discord application owner)
 - `MAIN_GUILD_ID` (main server where bans are detected; falls back to `GUILD_ID` if unset)
 - `APPEAL_GUILD_ID` (appeal server; defaults to `1490191877960503457`)
 - `APPEAL_REVIEW_CHANNEL_ID` (staff-only channel where submitted appeals are posted)
@@ -339,3 +339,5 @@ npm start
 ```
 
 The dashboard only permits changes after the server verifies the logged-in Discord user is still a member of the selected server and has `Manage Server` or `Administrator`. Moderation actions also verify the manager's permissions, the bot's permissions, role hierarchy, self-targeting, and server-owner protection before touching Discord.
+
+The private owner console is available at `/dashboard/owner`. Access is limited to `BOT_OWNER_ID`, or to the Discord application owner when that variable is unset. It supports permission-checked bot messages, persistent presence text, username updates, validated avatar uploads, rate limiting, CSRF protection, and dashboard audit events.

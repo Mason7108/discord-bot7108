@@ -132,6 +132,31 @@ export const moderationActionSchema = z.object({
   confirm: z.boolean().optional()
 });
 
+export const ownerMessageSchema = z.object({
+  guildId: discordIdSchema,
+  channelId: discordIdSchema,
+  content: z.string().trim().min(1).max(2000).refine((value) => !value.includes("\u0000"), "Message contains invalid characters.")
+});
+
+export const ownerPresenceSchema = z.object({
+  presenceStatus: z.enum(["online", "idle", "dnd", "invisible"]),
+  activityType: z.enum(["playing", "listening", "watching", "competing"]),
+  activityText: z
+    .string()
+    .trim()
+    .max(128)
+    .refine((value) => !/[\u0000-\u001f\u007f]/.test(value), "Activity text cannot contain control characters.")
+});
+
+export const ownerProfileSchema = z.object({
+  username: z
+    .string()
+    .trim()
+    .min(2)
+    .max(32)
+    .refine((value) => !/[\u0000-\u001f\u007f]/.test(value), "Username cannot contain control characters.")
+});
+
 export function formatZodError(error: z.ZodError): string {
   return error.issues.map((issue) => `${issue.path.join(".") || "body"}: ${issue.message}`).join("; ");
 }

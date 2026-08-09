@@ -8,13 +8,20 @@ import {
   hasManageGuildPermissionBits,
   moderationPermissionsForAction
 } from "../../src/api/dashboardPermissions.js";
-import { dashboardSettingsPatchSchema } from "../../src/api/dashboardValidation.js";
+import {
+  dashboardSettingsPatchSchema,
+  ownerMessageSchema,
+  ownerPresenceSchema,
+  ownerProfileSchema
+} from "../../src/api/dashboardValidation.js";
 import { checkRateLimit, resetRateLimitBucketsForTests } from "../../src/api/rateLimit.js";
 import {
   buildDashboardRedirectUri,
   hashDashboardValue,
+  isDashboardOwner,
   requireCsrf,
-  requireDashboardAuth
+  requireDashboardAuth,
+  requireDashboardOwner
 } from "../../src/api/dashboardSecurity.js";
 
 function mockResponse() {
@@ -117,6 +124,60 @@ describe("dashboard security helpers", () => {
         req
       )
     ).toBe("https://dashboard.example/oauth/callback");
+  });
+
+  it("allows only the configured bot owner into owner controls", () => {
+    const env = { BOT_OWNER_ID: "123456789012345678" } as any;
+    const client = { application: { owner: { id: "999999999999999999" } } } as any;
+
+    expect(isDashboardOwner(env, client, "123456789012345678")).toBe(true);
+    expect(isDashboardOwner(env, client, "999999999999999999")).toBe(false);
+
+    let allowed = false;
+    requireDashboardOwner(env, client)(
+      { dashboard: { user: { id: "123456789012345678" } } } as any,
+      mockResponse(),
+      () => {
+        allowed = true;
+      }
+    );
+    expect(allowed).toBe(true);
+
+    const denied = mockResponse();
+    requireDashboardOwner(env, client)(
+      { dashboard: { user: { id: "999999999999999999" } } } as any,
+      denied,
+      () => undefined
+    );
+    expect(denied.statusCode).toBe(403);
+  });
+
+  it("falls back to the Discord application owner when BOT_OWNER_ID is unset", () => {
+    expect(
+      isDashboardOwner({} as any, { application: { owner: { id: "123456789012345678" } } } as any, "123456789012345678")
+    ).toBe(true);
+    expect(
+      isDashboardOwner({} as any, { application: { owner: { ownerId: "123456789012345678" } } } as any, "123456789012345678")
+    ).toBe(true);
+  });
+
+  it("validates owner messages, presence, and profile changes", () => {
+    expect(
+      ownerMessageSchema.safeParse({
+        guildId: "123456789012345678",
+        channelId: "223456789012345678",
+        content: "Owner message"
+      }).success
+    ).toBe(true);
+    expect(
+      ownerMessageSchema.safeParse({
+        guildId: "123456789012345678",
+        channelId: "223456789012345678",
+        content: "x".repeat(2001)
+      }).success
+    ).toBe(false);
+    expect(ownerPresenceSchema.safeParse({ presenceStatus: "online", activityType: "thinking", activityText: "Hello" }).success).toBe(false);
+    expect(ownerProfileSchema.safeParse({ username: "\u0000bad" }).success).toBe(false);
   });
 
   it("filters manageable guilds by server management permissions", () => {

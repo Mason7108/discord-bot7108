@@ -11,6 +11,7 @@ const state = {
   guilds: [],
   guildId: null,
   guildData: null,
+  ownerData: null,
   csrfToken: null
 };
 
@@ -71,9 +72,10 @@ function setLoading(label = "Loading") {
 }
 
 async function api(path, options = {}) {
+  const multipart = typeof FormData !== "undefined" && options.body instanceof FormData;
   const headers = {
     Accept: "application/json",
-    ...(options.body ? { "Content-Type": "application/json" } : {}),
+    ...(options.body && !multipart ? { "Content-Type": "application/json" } : {}),
     ...(options.csrf ? { "X-CSRF-Token": state.csrfToken || "" } : {})
   };
   const response = await fetch(path, { ...options, headers: { ...headers, ...(options.headers || {}) } });
@@ -414,6 +416,13 @@ async function dashboardPage(parts) {
     return loginPrompt();
   }
 
+  if (parts[1] === "owner") {
+    if (!state.me.isOwner) {
+      return `<section class="section"><div class="error-state"><h1>Unauthorized</h1><p>Bot owner access is required.</p><a class="button primary" href="/dashboard" data-link>Return to dashboard</a></div></section>${footer()}`;
+    }
+    return ownerConsolePage();
+  }
+
   if (!state.guilds.length) {
     const response = await api("/api/auth/guilds");
     state.guilds = response.guilds || [];
@@ -458,7 +467,10 @@ function guildSelectionPage() {
           <h1>Your servers</h1>
           <p class="muted">Only servers where Discord reports that you can manage the server are shown.</p>
         </div>
-        <button class="button" data-logout>Sign out</button>
+        <div class="button-row">
+          ${state.me.isOwner ? `<a class="button primary" href="/dashboard/owner" data-link>Owner console</a>` : ""}
+          <button class="button" data-logout>Sign out</button>
+        </div>
       </div>
       <h2>bot7108 installed</h2>
       <div class="guild-grid">${installed.map(guildCard).join("") || `<div class="empty-state">No manageable installed servers found.</div>`}</div>
@@ -496,11 +508,129 @@ function dashboardSidebar(active) {
         </div>
       </div>
       <nav class="sidebar-nav" aria-label="Dashboard sections">
+        ${state.me.isOwner ? `<a class="sidebar-link" href="/dashboard/owner" data-link>Owner console</a>` : ""}
         ${dashboardSections
           .map(([id, label]) => `<a class="sidebar-link ${active === id ? "active" : ""}" href="/dashboard/${state.guildId}/${id}" data-link>${escapeHtml(label)}</a>`)
           .join("")}
       </nav>
     </aside>`;
+}
+
+function ownerSidebar() {
+  return `
+    <aside class="dashboard-sidebar">
+      <div class="sidebar-user">
+        <img class="avatar" src="${escapeHtml(state.me.avatarUrl)}" alt="" />
+        <div>
+          <strong>${escapeHtml(state.me.displayName)}</strong>
+          <div class="muted">@${escapeHtml(state.me.username)}</div>
+        </div>
+      </div>
+      <nav class="sidebar-nav" aria-label="Owner dashboard sections">
+        <a class="sidebar-link" href="/dashboard" data-link>Servers</a>
+        <a class="sidebar-link active" href="/dashboard/owner" data-link>Owner console</a>
+      </nav>
+    </aside>`;
+}
+
+function ownerChannelOptions(guildId) {
+  const guild = state.ownerData?.guilds.find((item) => item.id === guildId);
+  return (guild?.channels || [])
+    .map((channel) => `<option value="${escapeHtml(channel.id)}">#${escapeHtml(channel.name)}</option>`)
+    .join("");
+}
+
+async function ownerConsolePage() {
+  const data = await api("/api/dashboard/owner/console");
+  state.ownerData = data;
+  const messageGuilds = data.guilds.filter((guild) => guild.channels.length > 0);
+  const selectedGuild = messageGuilds[0];
+  const presence = data.presence;
+
+  return `
+    <section class="dashboard-layout">
+      ${ownerSidebar()}
+      <div class="dashboard-main">
+        <div class="dashboard-top">
+          <div>
+            <span class="eyebrow">Private owner controls</span>
+            <h1>Bot console</h1>
+          </div>
+          ${statusBadge(true, "Owner only")}
+        </div>
+
+        <div class="owner-bot-card form-card">
+          <img class="owner-bot-avatar" src="${escapeHtml(data.bot.avatarUrl)}" alt="bot7108 avatar" />
+          <div>
+            <h2>${escapeHtml(data.bot.username)}</h2>
+            <p class="muted">${escapeHtml(data.bot.id)}</p>
+            <span class="badge partial">${escapeHtml(presence.presenceStatus)}</span>
+          </div>
+        </div>
+
+        <div class="settings-grid owner-console-grid">
+          <form class="form-card" data-owner-presence-form>
+            <h2>Presence</h2>
+            <div class="form-grid">
+              ${field("presenceStatus", "Status", `<select name="presenceStatus">
+                ${["online", "idle", "dnd", "invisible"].map((status) => `<option value="${status}" ${presence.presenceStatus === status ? "selected" : ""}>${escapeHtml(status === "dnd" ? "Do not disturb" : status)}</option>`).join("")}
+              </select>`)}
+              ${field("activityType", "Activity", `<select name="activityType">
+                ${["playing", "listening", "watching", "competing"].map((type) => `<option value="${type}" ${presence.activityType === type ? "selected" : ""}>${escapeHtml(type)}</option>`).join("")}
+              </select>`)}
+              <div class="field full-span">
+                <label for="ownerActivityText">Activity text</label>
+                <input id="ownerActivityText" name="activityText" maxlength="128" value="${escapeHtml(presence.activityText)}" placeholder="What bot7108 is doing" />
+              </div>
+            </div>
+            <div class="button-row"><button class="button primary" type="submit">Update presence</button></div>
+          </form>
+
+          <form class="form-card" data-owner-profile-form>
+            <h2>Username</h2>
+            <div class="field">
+              <label for="ownerBotUsername">Bot username</label>
+              <input id="ownerBotUsername" name="username" minlength="2" maxlength="32" required value="${escapeHtml(data.bot.username)}" />
+            </div>
+            <div class="button-row"><button class="button secondary" type="submit">Change username</button></div>
+          </form>
+
+          <form class="form-card" data-owner-avatar-form enctype="multipart/form-data">
+            <h2>Avatar</h2>
+            <div class="field">
+              <label for="ownerBotAvatar">Image file</label>
+              <input id="ownerBotAvatar" name="avatar" type="file" accept="image/png,image/jpeg,image/gif,image/webp" required />
+              <small>PNG, JPEG, GIF, or WebP. Maximum 2 MB.</small>
+            </div>
+            <div class="button-row"><button class="button secondary" type="submit">Upload avatar</button></div>
+          </form>
+
+          <form class="form-card full-span" data-owner-message-form>
+            <h2>Send as bot7108</h2>
+            ${messageGuilds.length ? `
+              <div class="form-grid">
+                ${field("guildId", "Server", `<select name="guildId" data-owner-guild required>${messageGuilds.map((guild) => `<option value="${escapeHtml(guild.id)}">${escapeHtml(guild.name)}</option>`).join("")}</select>`)}
+                ${field("channelId", "Channel", `<select name="channelId" data-owner-channel required>${ownerChannelOptions(selectedGuild?.id)}</select>`)}
+                <div class="field full-span">
+                  <label for="ownerMessageContent">Message</label>
+                  <textarea id="ownerMessageContent" name="content" minlength="1" maxlength="2000" required></textarea>
+                  <small>Mentions are sent without notifications.</small>
+                </div>
+              </div>
+              <div class="button-row"><button class="button primary" type="submit">Send message</button></div>
+            ` : `<div class="empty-state">No writable text channels are available.</div>`}
+          </form>
+
+          <div class="panel full-span audit-table">
+            <h2>Recent owner actions</h2>
+            <table>
+              <thead><tr><th>Time</th><th>Action</th><th>Target</th></tr></thead>
+              <tbody>${data.recentAudit.map((event) => `<tr><td>${escapeHtml(new Date(event.createdAt).toLocaleString())}</td><td>${escapeHtml(event.action.replaceAll(".", " "))}</td><td>${escapeHtml(event.targetId || event.targetType)}</td></tr>`).join("") || `<tr><td colspan="3">No owner actions yet.</td></tr>`}</tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>`;
 }
 
 async function ensureGuildData() {
@@ -888,12 +1018,96 @@ async function handleModerationSubmit(event) {
   }
 }
 
+function handleOwnerGuildChange(event) {
+  const channelSelect = document.querySelector("[data-owner-channel]");
+  if (channelSelect) {
+    channelSelect.innerHTML = ownerChannelOptions(event.currentTarget.value);
+  }
+}
+
+async function handleOwnerMessageSubmit(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const payload = Object.fromEntries(new FormData(form).entries());
+  try {
+    await api("/api/dashboard/owner/messages", {
+      method: "POST",
+      csrf: true,
+      body: JSON.stringify(payload)
+    });
+    form.querySelector("[name=content]").value = "";
+    toast("Message sent.");
+  } catch (error) {
+    toast(error.message, "error");
+  }
+}
+
+async function handleOwnerPresenceSubmit(event) {
+  event.preventDefault();
+  const payload = Object.fromEntries(new FormData(event.currentTarget).entries());
+  try {
+    const response = await api("/api/dashboard/owner/presence", {
+      method: "PATCH",
+      csrf: true,
+      body: JSON.stringify(payload)
+    });
+    state.ownerData.presence = response.presence;
+    toast(response.message);
+  } catch (error) {
+    toast(error.message, "error");
+  }
+}
+
+async function handleOwnerProfileSubmit(event) {
+  event.preventDefault();
+  const payload = Object.fromEntries(new FormData(event.currentTarget).entries());
+  if (!window.confirm(`Change the bot username to ${payload.username}?`)) {
+    return;
+  }
+
+  try {
+    const response = await api("/api/dashboard/owner/profile", {
+      method: "PATCH",
+      csrf: true,
+      body: JSON.stringify(payload)
+    });
+    state.ownerData.bot.username = response.username;
+    toast(response.message);
+    await render();
+  } catch (error) {
+    toast(error.message, "error");
+  }
+}
+
+async function handleOwnerAvatarSubmit(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const payload = new FormData(form);
+  if (!payload.get("avatar")?.size || !window.confirm("Replace the bot avatar with this image?")) {
+    return;
+  }
+
+  try {
+    const response = await api("/api/dashboard/owner/avatar", {
+      method: "POST",
+      csrf: true,
+      body: payload
+    });
+    state.ownerData.bot.avatarUrl = response.avatarUrl;
+    toast(response.message);
+    await render();
+  } catch (error) {
+    toast(error.message, "error");
+  }
+}
+
 async function logout() {
   try {
     await api("/api/auth/logout", { method: "POST", csrf: true });
     state.me = null;
     state.guilds = [];
     state.guildData = null;
+    state.ownerData = null;
     toast("Signed out.");
     navigate("/dashboard");
   } catch (error) {
@@ -921,6 +1135,11 @@ function bindEvents() {
   document.querySelectorAll("[data-settings-form]").forEach((form) => form.addEventListener("submit", handleSettingsSubmit));
   document.querySelectorAll("[data-command-form]").forEach((form) => form.addEventListener("submit", handleCommandSubmit));
   document.querySelector("[data-moderation-form]")?.addEventListener("submit", handleModerationSubmit);
+  document.querySelector("[data-owner-guild]")?.addEventListener("change", handleOwnerGuildChange);
+  document.querySelector("[data-owner-message-form]")?.addEventListener("submit", handleOwnerMessageSubmit);
+  document.querySelector("[data-owner-presence-form]")?.addEventListener("submit", handleOwnerPresenceSubmit);
+  document.querySelector("[data-owner-profile-form]")?.addEventListener("submit", handleOwnerProfileSubmit);
+  document.querySelector("[data-owner-avatar-form]")?.addEventListener("submit", handleOwnerAvatarSubmit);
   document.querySelector("[data-logout]")?.addEventListener("click", logout);
 }
 
