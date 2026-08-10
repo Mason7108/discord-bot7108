@@ -1,4 +1,5 @@
 import { loadEnv } from "../config/env.js";
+import { ensureBotApplicationOwnerLoaded } from "../api/dashboardSecurity.js";
 import { applyBotPresence, getBotControlSettings } from "../core/services/botControlService.js";
 import type { EventDefinition } from "../core/types.js";
 import { ensureInviteGeneratorMessage } from "../systems/inviteGenerator.js";
@@ -14,6 +15,10 @@ const event: EventDefinition = {
   once: true,
   async execute(client) {
     logger.info({ user: client.user?.tag, id: client.user?.id }, "Bot ready");
+    await ensureBotApplicationOwnerLoaded(client).catch((error) => {
+      logger.error({ err: error }, "Failed to load Discord application owner");
+    });
+
     await getBotControlSettings()
       .then((settings) => applyBotPresence(client, settings))
       .catch((error) => {

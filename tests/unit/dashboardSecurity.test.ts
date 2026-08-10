@@ -17,6 +17,7 @@ import {
 import { checkRateLimit, resetRateLimitBucketsForTests } from "../../src/api/rateLimit.js";
 import {
   buildDashboardRedirectUri,
+  ensureBotApplicationOwnerLoaded,
   hashDashboardValue,
   isDashboardOwner,
   requireCsrf,
@@ -159,6 +160,24 @@ describe("dashboard security helpers", () => {
     expect(
       isDashboardOwner({} as any, { application: { owner: { ownerId: "123456789012345678" } } } as any, "123456789012345678")
     ).toBe(true);
+  });
+
+  it("loads the Discord application owner before owner authorization is used", async () => {
+    let fetchCount = 0;
+    const application = {
+      owner: null as null | { id: string },
+      async fetch() {
+        fetchCount += 1;
+        this.owner = { id: "123456789012345678" };
+        return this;
+      }
+    };
+
+    await ensureBotApplicationOwnerLoaded({ application } as any);
+    await ensureBotApplicationOwnerLoaded({ application } as any);
+
+    expect(fetchCount).toBe(1);
+    expect(isDashboardOwner({} as any, { application } as any, "123456789012345678")).toBe(true);
   });
 
   it("validates owner messages, presence, and profile changes", () => {

@@ -344,6 +344,12 @@ export function resolveBotOwnerId(env: Env, client: BotClient): string | undefin
   return "id" in applicationOwner && typeof applicationOwner.id === "string" ? applicationOwner.id : undefined;
 }
 
+export async function ensureBotApplicationOwnerLoaded(client: BotClient): Promise<void> {
+  if (client.application && !client.application.owner) {
+    await client.application.fetch();
+  }
+}
+
 export function isDashboardOwner(env: Env, client: BotClient, userId: string | undefined): boolean {
   const ownerId = resolveBotOwnerId(env, client);
   return Boolean(ownerId && userId && ownerId === userId);
