@@ -8,42 +8,21 @@ import {
   type GuildTextBasedChannel,
   type Message
 } from "discord.js";
-import type { Express, Request } from "express";
-import crypto from "node:crypto";
+import type { Express } from "express";
 import type { Env } from "../config/env.js";
 import type { BotClient } from "../core/types.js";
 import {
-  getAcceptedTermsAgreement,
-  isDiscordId,
-  recordTermsAgreement,
-  type AcceptedTermsAgreement,
   TERMS_CONTACT_EMAIL,
   TERMS_COPYRIGHT_NOTICE,
-  TERMS_REQUIRED_MESSAGE,
+  TERMS_USE_NOTICE,
   TERMS_VERSION
 } from "../core/services/termsAgreementService.js";
 import { loadTermsAgreementMessageState, saveTermsAgreementMessageState } from "../utils/termsAgreementMessageManager.js";
 import { logger } from "../utils/logger.js";
 
 const AGREEMENT_MESSAGE_TITLE = "bot7108 Terms of Service & Privacy Policy";
-const AGREEMENT_BUTTON_LABEL = "Agree to TOS & Privacy Policy";
-const SESSION_COOKIE_NAME = "bot7108_terms_session";
-const OAUTH_STATE_COOKIE_NAME = "bot7108_terms_oauth_state";
-const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1_000;
-const OAUTH_STATE_TTL_MS = 10 * 60 * 1_000;
-
-interface DiscordSession {
-  userId: string;
-  username: string;
-  globalName?: string;
-  expiresAt: number;
-}
-
-interface OAuthState {
-  state: string;
-  returnTo: string;
-  expiresAt: number;
-}
+const AGREEMENT_BUTTON_LABEL = "Review TOS & Privacy Policy";
+const LEGACY_AGREEMENT_BUTTON_LABEL = "Agree to TOS & Privacy Policy";
 
 interface LegalSection {
   title: string;
@@ -363,18 +342,6 @@ function isGuildTextChannel(channel: GuildBasedChannel | null): channel is Guild
   return Boolean(channel && channel.isTextBased() && "messages" in channel);
 }
 
-function isSendableTextChannel(channel: unknown): channel is { isTextBased: () => boolean; send: (payload: unknown) => Promise<unknown> } {
-  return Boolean(
-    channel &&
-      typeof channel === "object" &&
-      "isTextBased" in channel &&
-      typeof (channel as { isTextBased?: unknown }).isTextBased === "function" &&
-      (channel as { isTextBased: () => boolean }).isTextBased() &&
-      "send" in channel &&
-      typeof (channel as { send?: unknown }).send === "function"
-  );
-}
-
 function escapeHtml(value: string): string {
   return value
     .replaceAll("&", "&amp;")
@@ -384,141 +351,12 @@ function escapeHtml(value: string): string {
     .replaceAll("'", "&#039;");
 }
 
-function getOAuthClientSecret(env: Env): string | undefined {
-  return env.DISCORD_OAUTH_CLIENT_SECRET ?? env.DISCORD_CLIENT_SECRET;
-}
-
-function getCookieSecret(env: Env): string | undefined {
-  return env.AGREEMENT_COOKIE_SECRET ?? getOAuthClientSecret(env);
-}
-
-function isSecureCookie(env: Env): boolean {
-  return env.BASE_URL?.startsWith("https://") === true;
-}
-
-function parseCookies(header: string | undefined): Record<string, string> {
-  const result: Record<string, string> = {};
-  if (!header) {
-    return result;
-  }
-
-  for (const chunk of header.split(";")) {
-    const separator = chunk.indexOf("=");
-    if (separator === -1) {
-      continue;
-    }
-
-    const key = chunk.slice(0, separator).trim();
-    const value = chunk.slice(separator + 1).trim();
-    if (key) {
-      result[key] = decodeURIComponent(value);
-    }
-  }
-
-  return result;
-}
-
-function serializeCookie(env: Env, name: string, value: string, maxAgeSec: number): string {
-  const parts = [
-    `${name}=${encodeURIComponent(value)}`,
-    "Path=/",
-    "HttpOnly",
-    "SameSite=Lax",
-    `Max-Age=${maxAgeSec}`
-  ];
-
-  if (isSecureCookie(env)) {
-    parts.push("Secure");
-  }
-
-  return parts.join("; ");
-}
-
-function clearCookie(env: Env, name: string): string {
-  return serializeCookie(env, name, "", 0);
-}
-
-function signPayload(secret: string, payload: string): string {
-  return crypto.createHmac("sha256", secret).update(payload).digest("base64url");
-}
-
-function encodeSignedPayload(secret: string, payload: object): string {
-  const encoded = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
-  return `${encoded}.${signPayload(secret, encoded)}`;
-}
-
-function decodeSignedPayload<T extends object>(secret: string, value: string | undefined): T | null {
-  if (!value) {
-    return null;
-  }
-
-  const [encoded, signature] = value.split(".");
-  if (!encoded || !signature) {
-    return null;
-  }
-
-  const expected = signPayload(secret, encoded);
-  const expectedBuffer = Buffer.from(expected);
-  const signatureBuffer = Buffer.from(signature);
-  if (expectedBuffer.length !== signatureBuffer.length || !crypto.timingSafeEqual(expectedBuffer, signatureBuffer)) {
-    return null;
-  }
-
-  try {
-    return JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")) as T;
-  } catch {
-    return null;
-  }
-}
-
-function getSession(req: Request, env: Env): DiscordSession | null {
-  const secret = getCookieSecret(env);
-  if (!secret) {
-    return null;
-  }
-
-  const cookies = parseCookies(req.headers.cookie);
-  const session = decodeSignedPayload<DiscordSession>(secret, cookies[SESSION_COOKIE_NAME]);
-  if (!session || !isDiscordId(session.userId) || session.expiresAt <= Date.now()) {
-    return null;
-  }
-
-  return session;
-}
-
-function sanitizeReturnTo(value: unknown): string {
-  if (typeof value !== "string" || !value.startsWith("/") || value.startsWith("//") || value.includes("\\")) {
-    return "/terms";
-  }
-
-  return value;
-}
-
-function resolveGuildIdFromRequest(req: Request, env: Env): string | undefined {
-  const raw = typeof req.query.guildId === "string" ? req.query.guildId : undefined;
-  if (isDiscordId(raw)) {
-    return raw;
-  }
-
-  return isDiscordId(env.GUILD_ID) ? env.GUILD_ID : undefined;
-}
-
-function buildTermsUrl(env: Env, guildId: string): string | null {
+function buildTermsUrl(env: Env): string | null {
   if (!env.BASE_URL) {
     return null;
   }
 
-  const url = new URL("/terms", env.BASE_URL);
-  url.searchParams.set("guildId", guildId);
-  return url.toString();
-}
-
-function buildDiscordOAuthRedirectUri(env: Env): string {
-  if (!env.BASE_URL) {
-    throw new Error("BASE_URL is not configured.");
-  }
-
-  return new URL("/auth/discord/callback", env.BASE_URL).toString();
+  return new URL("/terms", env.BASE_URL).toString();
 }
 
 function renderSections(sections: LegalSection[]): string {
@@ -729,47 +567,12 @@ function renderShell(title: string, body: string): string {
 </html>`;
 }
 
-function formatAgreementDate(date: Date): string {
-  return new Intl.DateTimeFormat("en-US", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "America/Chicago"
-  }).format(date);
-}
-
-function renderLegalPage(input: {
-  env: Env;
-  req: Request;
-  session: DiscordSession | null;
-  guildId?: string;
-  acceptedAgreement?: AcceptedTermsAgreement | null;
-}): string {
-  const returnTo = sanitizeReturnTo(input.req.originalUrl || "/terms");
-  const loginUrl = `/auth/discord?returnTo=${encodeURIComponent(returnTo)}`;
-  const displayName = input.session?.globalName ?? input.session?.username;
-  const agreementPrompt = input.acceptedAgreement
-    ? "You have already agreed to the current bot7108 Terms of Service and Privacy Policy. You can still review them on this page."
-    : "By clicking submit, you agree to the bot7108 Terms of Service and Privacy Policy.";
-  const agreementControls =
-    input.session && input.guildId && input.acceptedAgreement
-      ? `<p class="session">Signed in as ${escapeHtml(displayName ?? "Discord user")} (${escapeHtml(input.session.userId)}).</p>
-        <p class="success">Accepted version ${escapeHtml(input.acceptedAgreement.termsVersion)} on ${escapeHtml(formatAgreementDate(input.acceptedAgreement.acceptedAt))}.</p>
-        <a class="button" href="#terms-of-service">Review Terms and Privacy Policy</a>`
-      : input.session && input.guildId
-      ? `<p class="session">Signed in as ${escapeHtml(displayName ?? "Discord user")} (${escapeHtml(input.session.userId)}).</p>
-        <form method="POST" action="/terms/agree">
-          <input type="hidden" name="guildId" value="${escapeHtml(input.guildId)}" />
-          <button type="submit">Submit Agreement</button>
-        </form>`
-      : input.session
-        ? `<p class="error">Open this page from the Discord agreement button so the server can be identified.</p>`
-        : `<a class="button" href="${escapeHtml(loginUrl)}">Sign in with Discord to Submit</a>`;
-
+function renderLegalPage(): string {
   return renderShell(
     "bot7108 Terms of Service and Privacy Policy",
     `<section class="hero">
       <h1>bot7108 Terms of Service and Privacy Policy</h1>
-      <p>Last Updated: June 1, 2026</p>
+      <p>Last Updated: August 9, 2026</p>
       <div class="meta">
         <span>Terms Version: ${escapeHtml(TERMS_VERSION)}</span>
         <span>Contact: ${escapeHtml(TERMS_CONTACT_EMAIL)}</span>
@@ -792,19 +595,8 @@ function renderLegalPage(input: {
 
     <section id="agreement" class="agreement">
       <h2>Agreement</h2>
-      <p>${escapeHtml(agreementPrompt)}</p>
+      <p>${escapeHtml(TERMS_USE_NOTICE)}</p>
       <p class="notice">${escapeHtml(TERMS_COPYRIGHT_NOTICE)}</p>
-      ${agreementControls}
-    </section>`
-  );
-}
-
-function renderStatusPage(title: string, description: string, statusClass: "success" | "error" = "success"): string {
-  return renderShell(
-    title,
-    `<section class="document">
-      <h1>${escapeHtml(title)}</h1>
-      <p class="${statusClass}">${escapeHtml(description)}</p>
     </section>`
   );
 }
@@ -814,7 +606,7 @@ function agreementEmbed(): EmbedBuilder {
     .setColor(0x2559d6)
     .setTitle(AGREEMENT_MESSAGE_TITLE)
     .setDescription(
-      `${TERMS_REQUIRED_MESSAGE}\n\nClick the button below to read and agree to the bot7108 Terms of Service and Privacy Policy.`
+      `${TERMS_USE_NOTICE}\n\nUse the button below to review the current policies.`
     )
     .setFooter({ text: TERMS_COPYRIGHT_NOTICE })
     .setTimestamp();
@@ -824,36 +616,6 @@ function agreementButtonRow(url: string): ActionRowBuilder<ButtonBuilder> {
   return new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel(AGREEMENT_BUTTON_LABEL).setURL(url)
   );
-}
-
-async function postTermsAgreementLog(input: {
-  client: BotClient;
-  env: Env;
-  guildId: string;
-  session: DiscordSession;
-  acceptedAt: Date;
-}): Promise<void> {
-  const channel = await input.client.channels.fetch(input.env.AGREEMENT_LOG_CHANNEL_ID).catch(() => null);
-  if (!isSendableTextChannel(channel)) {
-    logger.warn({ channelId: input.env.AGREEMENT_LOG_CHANNEL_ID }, "Terms agreement log channel not found or not text-based");
-    return;
-  }
-
-  const displayName = input.session.globalName ?? input.session.username;
-  const embed = new EmbedBuilder()
-    .setColor(0x57f287)
-    .setTitle("Terms Agreement Accepted")
-    .addFields(
-      { name: "User", value: `<@${input.session.userId}>`, inline: true },
-      { name: "Username", value: displayName, inline: true },
-      { name: "User ID", value: input.session.userId, inline: true },
-      { name: "Server ID", value: input.guildId, inline: true },
-      { name: "Terms Version", value: TERMS_VERSION, inline: true },
-      { name: "Timestamp", value: `<t:${Math.floor(input.acceptedAt.getTime() / 1_000)}:F>` }
-    )
-    .setTimestamp();
-
-  await channel.send({ embeds: [embed] });
 }
 
 function isStoredAgreementMessage(message: Message, botUserId: string): boolean {
@@ -871,7 +633,7 @@ function isStoredAgreementMessage(message: Message, botUserId: string): boolean 
       (component) =>
         component.type === ComponentType.Button &&
         "label" in component &&
-        component.label === AGREEMENT_BUTTON_LABEL
+        (component.label === AGREEMENT_BUTTON_LABEL || component.label === LEGACY_AGREEMENT_BUTTON_LABEL)
     );
   });
 
@@ -900,7 +662,7 @@ export async function ensureTermsAgreementMessage(client: BotClient, env: Env): 
     return;
   }
 
-  const termsUrl = buildTermsUrl(env, channel.guildId);
+  const termsUrl = buildTermsUrl(env);
   if (!termsUrl) {
     return;
   }
@@ -943,180 +705,16 @@ export async function ensureTermsAgreementMessage(client: BotClient, env: Env): 
   logger.info({ channelId: channel.id, messageId: sent.id }, "Created terms agreement message");
 }
 
-export function registerTermsAgreementRoutes(app: Express, env: Env, client: BotClient): void {
-  app.get(["/terms", "/privacy", "/tos"], async (req, res) => {
-    const session = getSession(req, env);
-    const guildId = resolveGuildIdFromRequest(req, env);
-    const acceptedAgreement =
-      session && guildId
-        ? await getAcceptedTermsAgreement(guildId, session.userId).catch((error) => {
-            logger.error({ err: error, guildId, userId: session.userId }, "Failed to check accepted terms on legal page");
-            return null;
-          })
-        : null;
-
-    res.status(200).type("html").send(renderLegalPage({ env, req, session, guildId, acceptedAgreement }));
+export function registerTermsAgreementRoutes(app: Express): void {
+  app.get(["/terms", "/privacy", "/tos"], (_req, res) => {
+    res.status(200).type("html").send(renderLegalPage());
   });
 
-  app.get("/auth/discord", (req, res) => {
-    const oauthSecret = getOAuthClientSecret(env);
-    const cookieSecret = getCookieSecret(env);
-    if (!env.BASE_URL || !oauthSecret || !cookieSecret) {
-      res
-        .status(500)
-        .type("html")
-        .send(renderStatusPage("Discord Login Unavailable", "Discord OAuth is not configured yet. Ask an admin to set BASE_URL, DISCORD_OAUTH_CLIENT_SECRET, and AGREEMENT_COOKIE_SECRET.", "error"));
-      return;
-    }
-
-    const state = crypto.randomBytes(24).toString("base64url");
-    const returnTo = sanitizeReturnTo(req.query.returnTo);
-    const statePayload: OAuthState = {
-      state,
-      returnTo,
-      expiresAt: Date.now() + OAUTH_STATE_TTL_MS
-    };
-
-    const authorizeUrl = new URL("https://discord.com/api/oauth2/authorize");
-    authorizeUrl.searchParams.set("client_id", env.CLIENT_ID);
-    authorizeUrl.searchParams.set("redirect_uri", buildDiscordOAuthRedirectUri(env));
-    authorizeUrl.searchParams.set("response_type", "code");
-    authorizeUrl.searchParams.set("scope", "identify");
-    authorizeUrl.searchParams.set("state", state);
-
-    res.setHeader("Set-Cookie", serializeCookie(env, OAUTH_STATE_COOKIE_NAME, encodeSignedPayload(cookieSecret, statePayload), OAUTH_STATE_TTL_MS / 1_000));
-    res.redirect(authorizeUrl.toString());
+  app.get(["/auth/discord", "/auth/discord/callback"], (_req, res) => {
+    res.redirect(302, "/terms#agreement");
   });
 
-  app.get("/auth/discord/callback", async (req, res) => {
-    const oauthSecret = getOAuthClientSecret(env);
-    const cookieSecret = getCookieSecret(env);
-    const code = typeof req.query.code === "string" ? req.query.code : undefined;
-    const state = typeof req.query.state === "string" ? req.query.state : undefined;
-
-    if (!env.BASE_URL || !oauthSecret || !cookieSecret || !code || !state) {
-      res
-        .status(400)
-        .type("html")
-        .send(renderStatusPage("Discord Login Failed", "The Discord login request was incomplete or the app is not configured.", "error"));
-      return;
-    }
-
-    const cookies = parseCookies(req.headers.cookie);
-    const savedState = decodeSignedPayload<OAuthState>(cookieSecret, cookies[OAUTH_STATE_COOKIE_NAME]);
-    if (!savedState || savedState.state !== state || savedState.expiresAt <= Date.now()) {
-      res.setHeader("Set-Cookie", clearCookie(env, OAUTH_STATE_COOKIE_NAME));
-      res
-        .status(400)
-        .type("html")
-        .send(renderStatusPage("Discord Login Failed", "The login state was invalid or expired. Return to Discord and try again.", "error"));
-      return;
-    }
-
-    try {
-      const tokenBody = new URLSearchParams({
-        client_id: env.CLIENT_ID,
-        client_secret: oauthSecret,
-        grant_type: "authorization_code",
-        code,
-        redirect_uri: buildDiscordOAuthRedirectUri(env)
-      });
-
-      const tokenResponse = await fetch("https://discord.com/api/oauth2/token", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: tokenBody
-      });
-
-      const tokenJson = (await tokenResponse.json().catch(() => ({}))) as { access_token?: string };
-      if (!tokenResponse.ok || !tokenJson.access_token) {
-        throw new Error("Discord OAuth token exchange failed.");
-      }
-
-      const userResponse = await fetch("https://discord.com/api/users/@me", {
-        headers: { Authorization: `Bearer ${tokenJson.access_token}` }
-      });
-
-      const discordUser = (await userResponse.json().catch(() => ({}))) as {
-        id?: string;
-        username?: string;
-        global_name?: string | null;
-      };
-
-      if (!userResponse.ok || !isDiscordId(discordUser.id) || !discordUser.username) {
-        throw new Error("Discord user lookup failed.");
-      }
-
-      const session: DiscordSession = {
-        userId: discordUser.id,
-        username: discordUser.username,
-        globalName: discordUser.global_name ?? undefined,
-        expiresAt: Date.now() + SESSION_TTL_MS
-      };
-
-      res.setHeader("Set-Cookie", [
-        clearCookie(env, OAUTH_STATE_COOKIE_NAME),
-        serializeCookie(env, SESSION_COOKIE_NAME, encodeSignedPayload(cookieSecret, session), SESSION_TTL_MS / 1_000)
-      ]);
-      res.redirect(savedState.returnTo);
-    } catch (error) {
-      logger.error({ err: error }, "Discord OAuth callback failed");
-      res.setHeader("Set-Cookie", clearCookie(env, OAUTH_STATE_COOKIE_NAME));
-      res
-        .status(500)
-        .type("html")
-        .send(renderStatusPage("Discord Login Failed", "Discord login failed. Return to Discord and try again.", "error"));
-    }
-  });
-
-  app.post("/terms/agree", async (req, res) => {
-    const session = getSession(req, env);
-    const guildId = typeof req.body.guildId === "string" ? req.body.guildId : undefined;
-
-    if (!session) {
-      const returnTo = `/terms${isDiscordId(guildId) ? `?guildId=${encodeURIComponent(guildId)}` : ""}#agreement`;
-      res.redirect(`/auth/discord?returnTo=${encodeURIComponent(returnTo)}`);
-      return;
-    }
-
-    if (!isDiscordId(guildId)) {
-      res
-        .status(400)
-        .type("html")
-        .send(renderStatusPage("Agreement Failed", "Open the Terms page from the Discord agreement button so the server can be identified.", "error"));
-      return;
-    }
-
-    try {
-      const agreement = await recordTermsAgreement({ guildId, userId: session.userId });
-      if (!agreement.created) {
-        res
-          .status(200)
-          .type("html")
-          .send(renderStatusPage(
-            "Already Agreed",
-            `You already agreed to the current bot7108 Terms of Service and Privacy Policy on ${formatAgreementDate(agreement.acceptedAt)}. You can still review the Terms and Privacy Policy page.`
-          ));
-        return;
-      }
-
-      await postTermsAgreementLog({ client, env, guildId, session, acceptedAt: agreement.acceptedAt }).catch((error) => {
-        logger.error({ err: error, guildId, userId: session.userId }, "Failed to post terms agreement log");
-      });
-
-      res
-        .status(200)
-        .type("html")
-        .send(renderStatusPage(
-          "Agreement Complete",
-          "You have successfully agreed to the bot7108 Terms of Service and Privacy Policy. You may now use bot7108 commands."
-        ));
-    } catch (error) {
-      logger.error({ err: error, guildId, userId: session.userId }, "Failed to record terms agreement");
-      res
-        .status(500)
-        .type("html")
-        .send(renderStatusPage("Agreement Failed", "Could not save your agreement. Please try again later or contact a server admin.", "error"));
-    }
+  app.post("/terms/agree", (_req, res) => {
+    res.redirect(303, "/terms#agreement");
   });
 }

@@ -16,7 +16,6 @@ import { isModuleEnabled } from "../../core/guards/moduleGuard.js";
 import { hasPermissionForCommand } from "../../core/guards/permissionGuard.js";
 import { getActiveCommandRestriction } from "../../core/services/commandRestrictionService.js";
 import { getGuildSettings } from "../../core/services/guildSettingsService.js";
-import { hasAcceptedTerms, TERMS_REQUIRED_MESSAGE } from "../../core/services/termsAgreementService.js";
 import type { BotClient, GuildSettingsShape } from "../../core/types.js";
 import { errorEmbed, warningEmbed } from "../../utils/embeds.js";
 import { logger } from "../../utils/logger.js";
@@ -179,14 +178,6 @@ export async function isVoiceCommandAudioEligible(input: {
       return { ok: false, settings };
     }
 
-    const acceptedTerms = await hasAcceptedTerms(input.guild.id, input.member.id).catch((error: unknown) => {
-      logger.error({ err: error, guildId: input.guild.id, userId: input.member.id }, "Failed to check voice command terms");
-      return false;
-    });
-
-    if (!acceptedTerms) {
-      return { ok: false, settings };
-    }
   }
 
   return { ok: true, settings };
@@ -325,15 +316,6 @@ export async function routeVoiceCommandTranscript(input: RouteVoiceCommandInput)
       return;
     }
 
-    const acceptedTerms = await hasAcceptedTerms(input.guild.id, input.member.id).catch((error: unknown) => {
-      logger.error({ err: error, guildId: input.guild.id, userId: input.member.id }, "Failed to check voice command terms");
-      return false;
-    });
-
-    if (!acceptedTerms) {
-      await denyVoiceCommand(input, textChannel, TERMS_REQUIRED_MESSAGE);
-      return;
-    }
   }
 
   const command = input.client.commands.get(parsed.commandName);

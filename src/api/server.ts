@@ -77,7 +77,7 @@ export function startApiServer(env: Env, client: BotClient): Server | null {
     res.json({ ok: true, uptime: process.uptime(), timestamp: new Date().toISOString() });
   });
 
-  registerTermsAgreementRoutes(app, env, client);
+  registerTermsAgreementRoutes(app);
 
   app.get("/verify", (req, res) => {
     const userId = typeof req.query.userId === "string" ? req.query.userId : undefined;

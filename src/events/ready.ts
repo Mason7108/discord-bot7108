@@ -34,7 +34,7 @@ const event: EventDefinition = {
     });
 
     await ensureTermsAgreementMessage(client, env).catch((error) => {
-      logger.error({ err: error }, "Failed to ensure terms agreement message");
+      logger.error({ err: error }, "Failed to ensure terms and privacy notice message");
     });
 
     await primeInviteCaches(client).catch((error) => {

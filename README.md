@@ -18,7 +18,7 @@ A greenfield TypeScript Discord bot built with `discord.js v14`, `mongoose`, `ex
 - Express dashboard API scaffold (`/health`, settings GET/PATCH)
 - Public website and secured Discord OAuth dashboard (`/`, `/dashboard`)
 - Button-based CAPTCHA verification flow (`/verify` web page + Discord button)
-- Terms of Service and Privacy Policy agreement flow (`/terms`, `/privacy` + Discord OAuth submit)
+- Public Terms of Service and Privacy Policy notice (`/terms`, `/privacy`; use constitutes agreement)
 - Welcome embed system for new members
 - Message logging for deletes/edits (with jump-to-message button on edits)
 
@@ -108,7 +108,7 @@ The server-authoritative protocol uses `session:join`, `session:state`, `sync:re
 Optional:
 
 - `DISCORD_CLIENT_ID` (alias for `CLIENT_ID`)
-- `DISCORD_CLIENT_SECRET` or `DISCORD_OAUTH_CLIENT_SECRET` (required for Discord OAuth dashboard and terms login)
+- `DISCORD_CLIENT_SECRET` or `DISCORD_OAUTH_CLIENT_SECRET` (required for the Discord OAuth dashboard)
 - `DASHBOARD_DISCORD_REDIRECT_URI` (dashboard OAuth callback override; defaults to `BASE_URL/auth/dashboard/discord/callback`)
 - `SUPPORT_SERVER_URL` (public support server link)
 - `BOT_INVITE_PERMISSIONS` (Discord invite permission integer; defaults to `1374695058518`, not Administrator)
@@ -157,9 +157,6 @@ Optional:
 - `MP3_ATTACHMENT_MAX_BYTES` (optional max Discord MP3 upload size for `/play file:`, default `26214400`, capped at `104857600`)
 - `FFMPEG_REFERER` (optional media request referer override, defaults to `https://www.youtube.com/`)
 - `FFMPEG_PROXY` (optional proxy URL for FFmpeg media fetches; defaults to `YTDLP_PROXY`/`YOUTUBE_PROXY` when set)
-- `DISCORD_OAUTH_CLIENT_SECRET` (required for the terms agreement submit flow)
-- `AGREEMENT_COOKIE_SECRET` (required for signed agreement/OAuth cookies)
-
 Verification (Railway/web) variables:
 
 - `VERIFY_CHANNEL_ID` (channel where verification embed/button is posted)
@@ -173,8 +170,7 @@ Verification (Railway/web) variables:
 - `RECAPTCHA_SITE_KEY`
 - `RECAPTCHA_SECRET_KEY`
 - `LOG_CHANNEL_ID` (optional verification logs)
-- `AGREEMENT_CHANNEL_ID` (channel where the TOS/privacy agreement message is posted; defaults to `1511227468873465856`)
-- `AGREEMENT_LOG_CHANNEL_ID` (channel where successful TOS/privacy agreements are logged; defaults to `1511432273797451796`)
+- `AGREEMENT_CHANNEL_ID` (channel where the TOS/privacy notice is posted; defaults to `1511227468873465856`)
 - `VERIFY_TOKEN_TTL_SEC` (default `600`, must be `300-900`)
 - `VERIFY_BUTTON_COOLDOWN_SEC` (default `15`)
 
@@ -248,7 +244,7 @@ Privacy behavior:
 - Short audio snippets are processed only to detect commands starting with `hey bot7108`.
 - Raw audio files are not written to disk. Audio is held in memory only long enough to transcribe the phrase, then discarded.
 - Detected commands are logged with guild ID, user ID, command name, and query for debugging. Non-command speech is not logged as transcript text.
-- Voice commands reuse the normal music command permission checks, module checks, command restrictions, terms gating, and cooldowns.
+- Voice commands reuse the normal music command permission checks, module checks, command restrictions, and cooldowns.
 
 ## Verification Flow
 
@@ -265,33 +261,20 @@ Privacy behavior:
    - `Unverified` role is removed (if present)
    - verification log is posted to `LOG_CHANNEL_ID` (if configured)
 
-## Terms and Privacy Agreement Flow
+## Terms and Privacy Notice
 
-1. On startup, the bot checks `AGREEMENT_CHANNEL_ID` and creates or updates the bot7108 agreement message.
-2. The message button opens `/terms?guildId=<server-id>` on `BASE_URL`.
+1. On startup, the bot checks `AGREEMENT_CHANNEL_ID` and creates or updates the bot7108 policy notice.
+2. The message button opens `/terms` on `BASE_URL`.
 3. Users can read the public Terms of Service and Privacy Policy without logging in.
-4. To submit agreement, users sign in with Discord OAuth2 using the `identify` scope.
-5. The agreement is stored in MongoDB with Discord user ID, server ID, accepted status, accepted timestamp, and terms version `2026-06-01`.
-6. A log embed is posted to `AGREEMENT_LOG_CHANNEL_ID` when someone agrees.
-7. Slash commands, autocomplete, buttons, modals, and leveling rewards are blocked until the current terms version is accepted.
+4. By inviting, using, or interacting with bot7108, users agree to the Terms of Service and acknowledge the Privacy Policy.
+5. No separate verification, Discord OAuth sign-in, or agreement submission is required. Commands, autocomplete, buttons, modals, leveling, VC TTS, and voice commands do not query an agreement record.
+
+This legal-policy behavior is separate from the optional server verification flow above, which server operators can use to control server roles and access.
 
 Update announcement policy:
 
 - When bot7108 is updated, post a message in the updates announcement channel `1523399601225203892` explaining what changed and what is new.
 - Review the Terms of Service and Privacy Policy on the first day of every month. If either policy changed or new terms were added, post the update in the tos-updates channel `1523399665213767731`.
-
-Discord OAuth setup:
-
-1. In the Discord Developer Portal, add this redirect URL to the bot application:
-
-```text
-https://your-app.up.railway.app/auth/discord/callback
-```
-
-2. Copy the OAuth2 client secret into Railway:
-   - `DISCORD_OAUTH_CLIENT_SECRET`
-3. Set a strong random cookie signing secret in Railway:
-   - `AGREEMENT_COOKIE_SECRET`
 
 ## Google reCAPTCHA Setup (v2 Checkbox)
 
