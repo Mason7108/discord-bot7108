@@ -372,6 +372,7 @@ function legalPage(kind) {
       "Terms of Service",
       [
         "bot7108 is provided by Mason7108 Apps for Discord server moderation, music, utilities, verification, tickets, giveaways, and server management features.",
+        "By inviting, using, or interacting with bot7108, you agree to its Terms of Service and acknowledge its Privacy Policy. No separate verification, Discord sign-in, or agreement submission is required.",
         "Server owners and managers are responsible for granting appropriate Discord permissions, configuring modules lawfully, and informing members when logs or moderation systems are enabled.",
         "You may not use bot7108 to harass, spam, scam, bypass Discord permissions, collect private information without permission, abuse moderation tools, or violate Discord rules.",
         "bot7108 is provided as is and may change, go offline, or be removed from a server when needed for safety, abuse prevention, maintenance, or legal reasons."
@@ -380,7 +381,7 @@ function legalPage(kind) {
     "/privacy-policy": [
       "Privacy Policy",
       [
-        "bot7108 stores information needed for enabled features, such as Discord user IDs, server IDs, channel IDs, role IDs, configuration settings, moderation records, warnings, command restrictions, ticket records, giveaway entries, verification agreement records, and support submissions.",
+        "bot7108 stores information needed for enabled features, such as Discord user IDs, server IDs, channel IDs, role IDs, configuration settings, moderation records, warnings, command restrictions, ticket records, giveaway entries, verification records, and support submissions.",
         "If logging is enabled, bot7108 may process deleted or edited message content that the bot can access. Server managers should inform members when logging is enabled.",
         "Discord OAuth for the dashboard uses identify and guilds scopes. Email is not requested. OAuth access tokens are encrypted server-side for the session and are not sent to the browser.",
         "bot7108 does not sell user data. Secrets such as bot tokens, session cookies, OAuth tokens, API keys, and database URLs should never be submitted through public forms."

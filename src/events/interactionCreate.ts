@@ -7,7 +7,6 @@ import { hasPermissionForCommand } from "../core/guards/permissionGuard.js";
 import { evaluateCommandOverride, getCommandOverride } from "../core/services/commandSettingsService.js";
 import { getActiveCommandRestriction } from "../core/services/commandRestrictionService.js";
 import { getGuildSettings } from "../core/services/guildSettingsService.js";
-import { hasAcceptedTerms, TERMS_REQUIRED_MESSAGE } from "../core/services/termsAgreementService.js";
 import {
   handleAppealModalSubmit,
   handleAppealReviewButton,
@@ -123,44 +122,6 @@ async function ensureCommandAccess(interaction: any): Promise<boolean> {
   return false;
 }
 
-async function ensureTermsAccepted(interaction: any): Promise<boolean> {
-  const guildId = typeof interaction.guildId === "string" ? interaction.guildId : undefined;
-  const userId = typeof interaction.user?.id === "string" ? interaction.user.id : undefined;
-
-  if (!guildId || !userId) {
-    return true;
-  }
-
-  const accepted = await hasAcceptedTerms(guildId, userId).catch((error) => {
-    logger.error({ err: error, guildId, userId }, "Failed to check terms agreement");
-    return false;
-  });
-
-  if (accepted) {
-    return true;
-  }
-
-  if (interaction.isAutocomplete?.()) {
-    await interaction.respond([]).catch((error: unknown) => {
-      logger.warn({ err: error, guildId, userId }, "Failed to deny autocomplete before terms agreement");
-    });
-    return false;
-  }
-
-  const payload = { content: TERMS_REQUIRED_MESSAGE, ephemeral: true };
-  if (interaction.deferred || interaction.replied) {
-    await interaction.followUp(payload).catch((error: unknown) => {
-      logger.warn({ err: error, guildId, userId }, "Failed to send terms agreement follow-up");
-    });
-    return false;
-  }
-
-  await interaction.reply(payload).catch((error: unknown) => {
-    logger.warn({ err: error, guildId, userId }, "Failed to send terms agreement reply");
-  });
-  return false;
-}
-
 const event: EventDefinition = {
   name: "interactionCreate",
   async execute(client, rawInteraction) {
@@ -171,10 +132,6 @@ const event: EventDefinition = {
     const interaction = rawInteraction as any;
 
     if (interaction.isAutocomplete()) {
-      if (!(await ensureTermsAccepted(interaction))) {
-        return;
-      }
-
       if (!(await ensureCommandAccess(interaction))) {
         return;
       }
@@ -189,10 +146,6 @@ const event: EventDefinition = {
     if (interaction.isButton()) {
       if (!interaction.guildId) {
         await interaction.reply({ content: "This interaction only works in servers.", ephemeral: true });
-        return;
-      }
-
-      if (!(await ensureTermsAccepted(interaction))) {
         return;
       }
 
@@ -241,10 +194,6 @@ const event: EventDefinition = {
         return;
       }
 
-      if (!(await ensureTermsAccepted(interaction))) {
-        return;
-      }
-
       if (isTicketCloseReasonModal(interaction.customId)) {
         const settings = await getGuildSettings(interaction.guildId);
         await handleTicketCloseReasonModal(interaction, settings);
@@ -255,11 +204,6 @@ const event: EventDefinition = {
         await handleAppealModalSubmit(interaction, env);
       }
 
-      return;
-    }
-
-    if (interaction.isAnySelectMenu?.()) {
-      await ensureTermsAccepted(interaction);
       return;
     }
 
@@ -274,10 +218,6 @@ const event: EventDefinition = {
 
     if (!interaction.guildId || !interaction.guild || !interaction.member) {
       await interaction.reply({ embeds: [errorEmbed("Unavailable", "Commands can only be used inside a guild.")], ephemeral: true });
-      return;
-    }
-
-    if (!(await ensureTermsAccepted(interaction))) {
       return;
     }
 
