@@ -8,6 +8,7 @@ import type { BotClient } from "../core/types.js";
 import { registerTermsAgreementRoutes } from "../systems/termsAgreement.js";
 import { buildVerifyPage, completeVerification } from "../systems/verification.js";
 import { logger } from "../utils/logger.js";
+import { buildContentSecurityPolicyDirectives } from "./contentSecurityPolicy.js";
 import { registerDashboardRoutes } from "./dashboardRoutes.js";
 import { ActivityAuthenticator } from "./musicActivity/auth.js";
 import { registerMusicActivityRoutes } from "./musicActivity/routes.js";
@@ -36,18 +37,7 @@ export function startApiServer(env: Env, client: BotClient): Server | null {
   app.use(
     helmet({
       contentSecurityPolicy: {
-        directives: {
-          defaultSrc: ["'self'"],
-          scriptSrc: ["'self'", "https://www.youtube.com", "https://s.ytimg.com"],
-          frameSrc: ["'self'", "https://www.youtube.com", "https://www.youtube-nocookie.com"],
-          imgSrc: ["'self'", "data:", "https://i.ytimg.com", "https://*.ytimg.com", "https://*.scdn.co", "https://cdn.discordapp.com"],
-          mediaSrc: ["'self'", "blob:"],
-          connectSrc: ["'self'", "ws:", "wss:"],
-          styleSrc: ["'self'", "'unsafe-inline'"],
-          formAction: ["'self'"],
-          baseUri: ["'self'"],
-          frameAncestors: ["https://discord.com", "https://*.discord.com"]
-        }
+        directives: buildContentSecurityPolicyDirectives()
       },
       crossOriginEmbedderPolicy: false,
       crossOriginResourcePolicy: { policy: "cross-origin" },
